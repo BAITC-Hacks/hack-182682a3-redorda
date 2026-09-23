@@ -14,7 +14,7 @@ export interface Dataset {
   };
 }
 
-export interface RunProgress {
+export interface ApiRunProgress {
   stage: 'draft' | 'queued' | 'running' | 'finalizing' | 'completed' | 'failed' | 'cancelled';
   percent: number;
   spent_budget: string | null;
@@ -33,12 +33,14 @@ export interface Run {
   seed: number;
   strategy: 'baseline' | 'openai';
   created_at: string;
-  progress: RunProgress;
-  error: { code: string; message: string } | null;
-  cancellation_requested: boolean;
+  progress?: RunProgress | null;
+  error?: { code: string; message: string } | null;
+  cancellation_requested?: boolean;
 }
 
-export interface RunEvent {
+export interface ApiRun extends Omit<Run, 'progress'> { progress: ApiRunProgress }
+
+export interface ApiRunEvent {
   id: number;
   kind: string;
   payload: Record<string, unknown>;
@@ -46,7 +48,7 @@ export interface RunEvent {
 }
 
 export interface RunEventsPage {
-  results: RunEvent[];
+  results: ApiRunEvent[];
   next_after: number;
   has_more: boolean;
 }
@@ -80,6 +82,54 @@ export interface RunResult {
     simulator_result: JsonValue;
   };
   warnings: string[];
+}
+
+export interface RunProgress {
+  stage: string;
+  percent: number | null;
+  spent: string;
+  contacts_used: number;
+  pilots_completed: number;
+}
+
+export type Channel = 'push' | 'sms' | 'digital_ads' | 'call';
+
+export interface RunEvent {
+  id: number;
+  created_at: string;
+  kind: 'info' | 'pilot' | 'warning' | 'error';
+  message: string;
+  pilot?: {
+    campaign_name: string;
+    channel: Channel;
+    target_tariff: string;
+    customers: number;
+    cost: string;
+    observed_effect: string | null;
+  } | null;
+}
+
+export interface CampaignResult {
+  id: string;
+  campaign_name: string;
+  target_tariff: string;
+  channel: Channel;
+  audience: string;
+  customers: number;
+  cost: string;
+  forecast_effect: string | null;
+  rationale: string;
+}
+
+export interface RunResults {
+  campaigns: CampaignResult[];
+  totals: {
+    spent: string;
+    contacts_used: number;
+    pilots_completed: number;
+    forecast_effect: string | null;
+    simulated_effect: string | null;
+  };
 }
 
 export interface RunInput {
