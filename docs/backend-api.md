@@ -116,6 +116,74 @@ worker, данные или внешнюю сеть. Создание недос
 оценку симулятора. В `warnings` сохраняются ограничения прогноза и сообщения
 fallback. CSV и `results/` читают сохранённые записи, не выполняя расчёт повторно.
 
+## Живая команда и команды
+
+`GET runs/{id}/team/` возвращает согласованный snapshot. `last_event_id` — курсор:
+события до него уже включены в состояние, следующий запрос —
+`GET runs/{id}/events/?after=7`. Пример формы (значения иллюстративны):
+
+```json
+{"schema_version":1,"run_id":"00000000-0000-0000-0000-000000000001",
+ "snapshot_id":"snapshot-1","last_event_id":7,"tasks":[],"artifacts":[],
+ "available_commands":["explain","compare","create_plan"]}
+```
+
+Задачи содержат `id`, `actor_id`, `status`, `title`, `artifact_ids`,
+`evidence_ids`. Артефакты содержат `id`, `task_id`, `type`, `title`, `data`,
+`evidence_ids`. Состав зависит от сохранённого запуска; пустые списки означают
+отсутствие подтверждённой работы, а не выполненный расчёт. `available_commands`
+формирует сервис по текущему состоянию. Поля внутреннего состояния движка, секреты,
+пути и traceback не выдаются. Неизвестный измеренный результат остаётся `null`.
+
+`POST runs/{id}/commands/` требует сессию, CSRF и `Idempotency-Key` длиной
+1–255. Тело имеет только `type`, `snapshot_id`, `parameters`:
+
+```http
+Idempotency-Key: explain-campaign-1
+X-CSRFToken: <токен сессии>
+
+{"type":"explain","snapshot_id":"snapshot-1",
+ "parameters":{"campaign_id":"campaign-1"}}
+```
+
+Другие допустимые параметры:
+
+```json
+{"type":"compare","snapshot_id":"snapshot-1",
+ "parameters":{"constraints":{"budget":"50000.00","allowed_channels":["sms"]}}}
+```
+
+```json
+{"type":"create_plan","snapshot_id":"snapshot-1",
+ "parameters":{"name":"Вариант SMS","constraints":{"budget":"50000.00"}}}
+```
+
+`budget` — decimal-строка от `0.01` до `100000.00`; каналы: `push`, `sms`,
+`digital_ads`, `call`. В `constraints` нужен хотя бы один параметр. Неизвестные
+поля на любом уровне, пустые значения и неверные типы дают 400.
+
+Первый ответ — 202, повтор того же запроса с тем же ключом возвращает тот же
+объект; другой запрос с этим ключом — 409. `GET
+runs/{id}/commands/{command_id}/` возвращает его текущее состояние:
+
+```json
+{"id":"command-1","type":"explain","status":"queued",
+ "result":null,"error":null}
+```
+
+Статусы: `queued`, `running`, `completed`, `failed`. У `explain`/`compare`
+результат содержит сохранённый артефакт с основаниями; `create_plan` — новый
+`run_id` черновика, который запускается отдельно через `start/`.
+Проверку принадлежности команды исходному run выполняет сервис и HTTP-слой.
+Неподдерживаемые команды `pause`, `resume`, ручной пилот отклоняются с 400.
+
+Ошибки: отсутствие ключа — 400 `validation_error` с
+`fields.Idempotency-Key`; чужой run/команда — 404 `not_found`; конфликт snapshot
+или ключа — 409 `team_conflict`; недоступный сервис — 503 `team_unavailable`.
+Пример: `{"error":{"code":"team_conflict","message":"Команда недоступна для выбранного snapshot или ключа.","fields":{}}}`.
+Пока сервисы `team_state`/`team_commands` не подключены, маршруты не могут
+возвращать реальные задачи или исполнять команды и отвечают 503.
+
 ## Ошибки
 
 Все обрабатываемые ошибки имеют вид `{ "error": { "code": "validation_error", "message": "Проверьте параметры запроса.", "fields": { "budget": ["..."] } } }`. Для ошибок состояния `fields` пустой объект. Основные коды: `validation_error` (400), `not_found` (404), `dataset_required`, `run_conflict`, `result_not_ready` (409), `engine_unavailable`, `openai_unavailable`, `execution_unavailable` (503). Внутренние подробности исключений сервисов, пути файлов и traceback не включаются в сообщения. `health/`, `ready/`, `/api/schema/` и `/api/docs/` остаются публичными.
