@@ -3,8 +3,9 @@
 React → `/api/v1/` → Django 5.2 → Celery → общий `campaign_engine` → публичная среда Beeline.
 Источник машинных схем: [openapi.yaml](openapi.yaml); подробные ответы: [backend-api.md](backend-api.md).
 
-План следующей итерации: [задачи и команды живой AI-команды](team-contract.md).
-Новые маршруты из этого плана добавляются в настоящий контракт и OpenAPI после реализации.
+Целевой контракт задач и команд: [team-contract.md](team-contract.md). HTTP-слой
+трёх маршрутов добавлен; хранение snapshot и выполнение команд требуют сервисов
+`team_state` и `team_commands` и до их подключения отвечают 503 `team_unavailable`.
 
 ## Доступ и договорённость для frontend
 
@@ -53,6 +54,15 @@ Frontend использует один origin, `credentials: 'include'` и сл�
 | GET | `runs/{id}/events/?after=0&limit=100` | `{results, next_after, has_more}`, limit 1–200 |
 | GET | `runs/{id}/results/` | Сохранённые кампании, totals, warnings; до completed — 409 |
 | GET | `runs/{id}/export/` | Стабильный UTF-8 CSV из БД; до completed — 409 |
+| GET | `runs/{id}/team/` | Snapshot команды: задачи, артефакты, доступные команды и `last_event_id` |
+| POST | `runs/{id}/commands/` | 202; команда `explain`, `compare` или `create_plan`; обязателен `Idempotency-Key` |
+| GET | `runs/{id}/commands/{command_id}/` | Сохранённый статус и результат команды; чужой run — 404 |
+
+Команды используют тот же Django session/CSRF, что и `start/`. Клиент сначала
+получает `team/`, затем запрашивает события с `after=last_event_id`. `snapshot_id`
+передаётся в POST без изменения. Параметры и примеры приведены в
+[backend-api.md](backend-api.md). `pause`, `resume` и дополнительный ручной пилот
+не поддерживаются и не появляются в `available_commands`.
 
 POST `runs/`: `name`, `budget` (decimal-строка), `max_contacts`, `max_pilots`, `seed`,
 `strategy="baseline" | "openai"` (по умолчанию `baseline`). Датасет выбирает сервер.
