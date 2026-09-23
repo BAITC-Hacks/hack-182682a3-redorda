@@ -87,8 +87,8 @@ export interface RunResult {
 export interface RunProgress {
   stage: string;
   percent: number | null;
-  spent: string;
-  contacts_used: number;
+  spent: string | null;
+  contacts_used: number | null;
   pilots_completed: number;
 }
 
@@ -103,9 +103,9 @@ export interface RunEvent {
     campaign_name: string;
     channel: Channel;
     target_tariff: string;
-    customers: number;
-    cost: string;
-    observed_effect: string | null;
+    customers: number | null;
+    cost: string | null;
+    observed_lift_ratio: number | null;
   } | null;
 }
 
@@ -115,18 +115,18 @@ export interface CampaignResult {
   target_tariff: string;
   channel: Channel;
   audience: string;
-  customers: number;
-  cost: string;
+  customers: number | null;
+  cost: string | null;
   forecast_effect: string | null;
   rationale: string;
 }
 
 export interface RunResults {
   campaigns: CampaignResult[];
+  warnings: string[];
   totals: {
-    spent: string;
-    contacts_used: number;
-    pilots_completed: number;
+    spent: string | null;
+    contacts_used: number | null;
     forecast_effect: string | null;
     simulated_effect: string | null;
   };
@@ -149,6 +149,7 @@ export interface Page<T> {
 }
 
 export interface Meta {
+  environment?: { mode: string; label: string };
   limits: Record<string, number>;
   channel_costs: Record<string, number>;
   features: { run_execution: boolean; openai_strategy: boolean; csv_export: boolean };

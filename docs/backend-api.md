@@ -7,7 +7,7 @@ Base URL: `/api/v1/`. JSON-запросы и ответы используют U
 | Метод | Путь | Успех | Назначение |
 | --- | --- | --- | --- |
 | GET | `health/` | 200 `{status: "ok", service: "redorda-api"}` | Публичная проверка API и соединения с БД. |
-| GET | `meta/` | 200 | `limits`, `channel_costs`, `features`. Флаги остаются `false`, пока интегрированный сценарий не проверен. |
+| GET | `meta/` | 200 | `limits`, `channel_costs`, `features`, `environment: {mode, label}`. Запуск зависит от настройки и наличия проверенного пакета. |
 | GET | `datasets/current/` | 200 | Текущий импортированный набор; 404 без набора. |
 | GET | `runs/` | 200 | `{count, next, previous, results}`; стандартная пагинация DRF, 20 элементов на страницу. |
 | POST | `runs/` | 201 | Создать черновик; 409 без набора. |
@@ -62,6 +62,12 @@ Base URL: `/api/v1/`. JSON-запросы и ответы используют U
 `campaign_cost`, `total_cost`, `total_contacts`, `predicted_effect` и `simulator_result` могут быть `null`, если расчёт их не предоставил; `warnings` объясняет отсутствие данных. `parameters` включает фильтры аудитории, `target_tariff` и `channel` по публичному контракту движка. `metrics.cost` и `metrics.n_contacts` всегда есть, но равны `null`, если движок их не предоставил; `explanation` также может быть `null`. Прогноз и результат симуляции сохраняются отдельно в `totals`. Отсутствующие расчёты не заменяются выдуманными значениями. Экспорт содержит заголовок и до 10 строк кампаний с колонками `campaign_name,filter_arpu_segment,filter_data_segment,filter_call_segment,filter_current_tariff,target_tariff,channel`.
 
 ## Ошибки
+
+Общий runner сохраняет прогноз в `metrics.predicted_effect` и `totals.predicted_effect`
+как decimal-строку чистого прироста; `warnings` включает ограничения модели.
+Встроенная среда — официальный **локальный симулятор**, не скрытая судейская среда.
+Её режим и пояснение возвращаются через `meta.environment`; `simulator_result`
+остаётся `null`, поскольку backend не использует приватный оценщик.
 
 Все обрабатываемые ошибки имеют вид `{ "error": { "code": "validation_error", "message": "Проверьте параметры запроса.", "fields": { "budget": ["..."] } } }`. Для ошибок состояния `fields` пустой объект. Основные коды: `validation_error` (400), `not_found` (404), `dataset_required`, `run_conflict`, `result_not_ready` (409), `execution_unavailable` (503). Внутренние подробности исключений сервисов, пути файлов и traceback не включаются в сообщения. Проверка доступа для пользовательских операций задаётся интегратором; `health/` остаётся публичным.
 

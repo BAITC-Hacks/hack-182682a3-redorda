@@ -1,4 +1,5 @@
-import type { Dataset, Meta, Page, Run, RunEvent, RunInput, RunResults, Session } from './types';
+import type { ApiRun, Dataset, Meta, Page, RunEventsPage, RunInput, RunResult, Session } from './types';
+import { toEvent, toResults, toRun } from './adapters';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public fields: Record<string, unknown> = {},
@@ -73,16 +74,16 @@ export const api = {
   },
   meta: () => request<Meta>('meta/'),
   dataset: () => request<Dataset>('datasets/current/'),
-  runs: (page = 1) => request<Page<Run>>(`runs/?page=${page}`),
-  run: (id: string, signal?: AbortSignal) => request<Run>(`runs/${id}/`, { signal }),
-  createRun: (input: RunInput) => request<Run>('runs/', {
+  runs: (page = 1) => request<Page<ApiRun>>(`runs/?page=${page}`).then(page => ({ ...page, results: page.results.map(toRun) })),
+  run: (id: string, signal?: AbortSignal) => request<ApiRun>(`runs/${id}/`, { signal }).then(toRun),
+  createRun: (input: RunInput) => request<ApiRun>('runs/', {
     method: 'POST', body: JSON.stringify(input),
-  }),
-  startRun: (id: string, key: string, signal?: AbortSignal) => request<Run>(`runs/${id}/start/`, {
+  }).then(toRun),
+  startRun: (id: string, key: string, signal?: AbortSignal) => request<ApiRun>(`runs/${id}/start/`, {
     method: 'POST', body: '{}', headers: { 'Idempotency-Key': key }, signal,
-  }),
-  cancelRun: (id: string, signal?: AbortSignal) => request<Run>(`runs/${id}/cancel/`, { method: 'POST', body: '{}', signal }),
-  events: (id: string, after: number, signal?: AbortSignal) => request<Page<RunEvent>>(`runs/${id}/events/?after=${after}`, { signal }),
-  results: (id: string, signal?: AbortSignal) => request<RunResults>(`runs/${id}/results/`, { signal }),
+  }).then(toRun),
+  cancelRun: (id: string, signal?: AbortSignal) => request<ApiRun>(`runs/${id}/cancel/`, { method: 'POST', body: '{}', signal }).then(toRun),
+  events: (id: string, after: number, signal?: AbortSignal) => request<RunEventsPage>(`runs/${id}/events/?after=${after}`, { signal }).then(page => ({ ...page, results: page.results.map(toEvent) })),
+  results: (id: string, signal?: AbortSignal) => request<RunResult>(`runs/${id}/results/`, { signal }).then(toResults),
   exportRun: (id: string, signal?: AbortSignal) => request<Blob>(`runs/${id}/export/`, { signal }, true),
 };

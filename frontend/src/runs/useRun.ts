@@ -38,11 +38,11 @@ export function useRun(id: string, execution: boolean) {
           while (more && !controller.signal.aborted) {
             const page = await api.events(id, cursor.current, controller.signal);
             if (controller.signal.aborted) return;
-            const nextCursor = Math.max(cursor.current, ...page.results.map(event => event.id));
-            if (page.next && nextCursor <= cursor.current) throw new Error('Не удалось загрузить следующую страницу журнала.');
+            const nextCursor = page.next_after;
+            if (!Number.isInteger(nextCursor) || nextCursor < cursor.current || (page.has_more && nextCursor === cursor.current)) throw new Error('Не удалось загрузить следующую страницу журнала.');
             cursor.current = nextCursor;
             setEvents(previous => Array.from(new Map([...previous, ...page.results].map(event => [event.id, event])).values()).sort((a, b) => a.id - b.id));
-            more = page.next !== null;
+            more = page.has_more;
           }
         } catch (reason) { failures.push(`Не удалось обновить журнал. ${message(reason)}`); }
       }

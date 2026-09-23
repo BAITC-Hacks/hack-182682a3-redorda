@@ -5,11 +5,14 @@ import App from '../App';
 
 const draft = { id: 'plan-1', name: 'Осенняя кампания', dataset_id: 'data-1', status: 'draft',
   budget: '100000.00', max_contacts: 15000, max_pilots: 20, seed: 42, strategy: 'baseline', created_at: '2026-09-23T10:00:00Z' };
-const progress = { stage: 'Проверяем гипотезы', percent: 40, spent: '1200.50', contacts_used: 100, pilots_completed: 2 };
-const event = { id: 1, kind: 'pilot', message: 'Проверена гипотеза перехода', created_at: '2026-09-23T10:01:00Z',
-  pilot: { campaign_name: 'Интернет для активных', channel: 'sms', target_tariff: 'tariff_4', customers: 100, cost: '400.00', observed_effect: '250.00' } };
-const results = { campaigns: [{ id: 'c-1', campaign_name: 'Интернет для активных', target_tariff: 'tariff_4', channel: 'sms', audience: 'Активные пользователи интернета', customers: 3000, cost: '12000.00', forecast_effect: '4500.00', rationale: 'Пилот показал положительный эффект.' }],
-  totals: { spent: '13200.50', contacts_used: 3100, pilots_completed: 2, forecast_effect: '4500.00', simulated_effect: null } };
+const progress = { stage: 'running', percent: 40, spent_budget: '1200.50', used_contacts: 100, completed_pilots: 2 };
+const event = { id: 1, kind: 'pilot_completed', created_at: '2026-09-23T10:01:00Z',
+  payload: { request: { channel: 'sms', target_tariff: 'tariff_4' },
+    observation: { n_customers: 100, cost: 400, observed_lift_ratio: 0.25 } } };
+const results = { run_id: 'plan-1', status: 'completed',
+  campaigns: [{ rank: 1, parameters: { campaign_name: 'Интернет для активных', target_tariff: 'tariff_4', channel: 'sms', filter_data_segment: 'HEAVY' },
+    metrics: { n_contacts: 3000, cost: '12000.00', predicted_effect: '4500.00' }, explanation: 'Пилот показал положительный эффект.' }],
+  totals: { total_cost: '13200.50', total_contacts: 3100, pilot_cost: '1200.50', campaign_cost: '12000.00', pilot_contacts: 100, predicted_effect: '4500.00', simulator_result: null }, warnings: [] };
 let status: string;
 let enabled: boolean;
 let calls: { path: string; init?: RequestInit }[];
@@ -21,12 +24,14 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     const path = url.replace('/api/v1/', ''); calls.push({ path, init });
     const custom = override?.(path, init); if (custom) return custom;
+    if (path === 'auth/me/') return json({ authenticated: true, user: { id: 1, username: 'analyst', is_staff: false } });
+    if (path === 'auth/csrf/') return json({ csrf_token: 'test-token' });
     if (path === 'meta/') return json({ limits: { budget: 100000, contacts: 15000, pilots: 20 }, channel_costs: {}, features: { run_execution: enabled, openai_strategy: false, csv_export: enabled } });
     if (path === 'datasets/current/') return json({ id: 'data-1', name: 'Набор', checksum: 'abc', customer_count: 10000, imported_at: draft.created_at, summary: { baseline_arpu: '100.00', tariff_count: 21, synthetic: true, segments: { arpu_segment: {}, data_segment: {}, call_segment: {} } } });
     if (path === 'runs/plan-1/') return json({ ...draft, status, ...(status !== 'draft' ? { progress } : {}) });
     if (path === 'runs/plan-1/start/') { status = 'queued'; return json({ ...draft, status }, 202); }
     if (path === 'runs/plan-1/cancel/') return json({ ...draft, status, progress, cancellation_requested: true }, 202);
-    if (path.startsWith('runs/plan-1/events/')) return json({ count: 1, next: null, previous: null, results: [event] });
+    if (path.startsWith('runs/plan-1/events/')) return json({ next_after: 1, has_more: false, results: [event] });
     if (path === 'runs/plan-1/results/') return json(results);
     if (path === 'runs/') return json(draft, 201);
     throw new Error(`Unexpected request: ${path}`);
@@ -61,10 +66,10 @@ describe('пользовательский сценарий', () => {
     expect(calls.filter(call => call.path.endsWith('/start/'))).toHaveLength(1);
     status = 'running'; await tick();
     expect(screen.getByRole('progressbar', { name: 'Прогресс расчёта' })).toHaveAttribute('aria-valuenow', '40');
-    expect(screen.getByText('Проверена гипотеза перехода')).toBeInTheDocument();
+    expect(screen.getByText('Пилот завершён')).toBeInTheDocument();
     expect(screen.getByLabelText('Остаток бюджета')).toHaveTextContent(/98\s?799,5/);
     await tick();
-    expect(screen.getAllByText('Проверена гипотеза перехода')).toHaveLength(1);
+    expect(screen.getAllByText('Пилот завершён')).toHaveLength(1);
     status = 'completed'; await tick();
     expect(screen.getByRole('table', { name: 'Выбранные кампании' })).toHaveTextContent('tariff_4');
     expect(screen.getByLabelText('Результат симуляции')).toHaveTextContent('Не рассчитан');
@@ -99,11 +104,11 @@ describe('пользовательский сценарий', () => {
 
   it('сохраняет данные при сетевом сбое и восстанавливает опрос', async () => {
     vi.useFakeTimers(); status = 'running'; open(); await act(async () => {});
-    expect(screen.getByText('Проверена гипотеза перехода')).toBeInTheDocument();
+    expect(screen.getByText('Пилот завершён')).toBeInTheDocument();
     override = path => path === 'runs/plan-1/' ? Promise.reject(new TypeError('Failed to fetch')) : undefined;
     await tick();
     expect(screen.getByRole('alert')).toHaveTextContent(/Не удалось обновить/);
-    expect(screen.getByText('Проверена гипотеза перехода')).toBeInTheDocument();
+    expect(screen.getByText('Пилот завершён')).toBeInTheDocument();
     override = undefined; await tick();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
@@ -121,17 +126,17 @@ describe('пользовательский сценарий', () => {
   it('дочитывает все страницы финального журнала и не теряет результаты при сбое журнала', async () => {
     status = 'completed';
     override = path => {
-      if (path.endsWith('events/?after=0')) return json({ count: 2, next: '?after=1', previous: null, results: [event] });
+      if (path.endsWith('events/?after=0')) return json({ next_after: 1, has_more: true, results: [event] });
       if (path.endsWith('events/?after=1')) return json({ error: { message: 'Журнал временно недоступен.' } }, 503);
     };
     open();
     expect(await screen.findByRole('table', { name: 'Выбранные кампании' })).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Журнал временно недоступен');
-    override = path => path.endsWith('events/?after=1') ? json({ count: 1, next: null, previous: null,
-      results: [{ ...event, id: 2, message: 'Финальный план сохранён', kind: 'info', pilot: null }] }) : undefined;
+    override = path => path.endsWith('events/?after=1') ? json({ next_after: 2, has_more: false,
+      results: [{ ...event, id: 2, kind: 'result_ready', payload: { campaigns: 1 } }] }) : undefined;
     fireEvent.click(screen.getByRole('button', { name: 'Повторить обновление' }));
     expect(await screen.findByText('Финальный план сохранён')).toBeInTheDocument();
-    expect(screen.getAllByText('Проверена гипотеза перехода')).toHaveLength(1);
+    expect(screen.getAllByText('Пилот завершён')).toHaveLength(1);
   });
 
   it('прерывает запрос и прекращает опрос при уходе со страницы', async () => {

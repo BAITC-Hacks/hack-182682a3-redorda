@@ -37,10 +37,11 @@ describe('session API', () => {
       expect.objectContaining({ credentials: 'same-origin' }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/auth/login/',
       expect.objectContaining({ method: 'POST', credentials: 'same-origin',
-        headers: expect.objectContaining({ 'X-CSRFToken': 'csrf-before-login' }),
         body: JSON.stringify({ username: 'analyst', password: 'secret' }) }));
+    expect(new Headers(fetchMock.mock.calls[1][1].headers).get('X-CSRFToken')).toBe('csrf-before-login');
     expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/v1/runs/',
-      expect.objectContaining({ headers: expect.objectContaining({ 'X-CSRFToken': 'csrf-after-login' }) }));
+      expect.objectContaining({ method: 'POST' }));
+    expect(new Headers(fetchMock.mock.calls[2][1].headers).get('X-CSRFToken')).toBe('csrf-after-login');
   });
 
   it('fetches CSRF and sends it when logging out', async () => {
@@ -52,8 +53,8 @@ describe('session API', () => {
 
     await expect(api.logout()).resolves.toMatchObject({ authenticated: false });
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/auth/logout/',
-      expect.objectContaining({ method: 'POST',
-        headers: expect.objectContaining({ 'X-CSRFToken': 'logout-token' }) }));
+      expect.objectContaining({ method: 'POST' }));
+    expect(new Headers(fetchMock.mock.calls[1][1].headers).get('X-CSRFToken')).toBe('logout-token');
   });
 
   it('notifies only when the API reports an expired session', async () => {
@@ -82,6 +83,6 @@ describe('session API', () => {
     await expect(api.login('analyst', 'bad')).rejects.toMatchObject({
       status: 401, code: 'invalid_credentials', message: 'Неверный логин или пароль',
     });
-    await expect(api.me()).rejects.toThrow('Network down');
+    await expect(api.me()).rejects.toMatchObject({ status: 0, message: expect.stringContaining('Нет связи с сервером') });
   });
 });

@@ -7,7 +7,7 @@ export const statusLabels: Record<Run['status'], string> = {
 export const channelLabels: Record<Channel, string> = {
   push: 'Push', sms: 'SMS', digital_ads: 'Реклама', call: 'Звонок',
 };
-export const formatNumber = (value: number | string) => new Intl.NumberFormat('ru-RU', {
+export const formatNumber = (value: number | string | null | undefined) => value == null ? 'Нет данных' : new Intl.NumberFormat('ru-RU', {
   maximumFractionDigits: 2,
 }).format(Number(value));
 export const formatEffect = (value: string | null | undefined) => value == null ? 'Не рассчитан' : `${formatNumber(value)} у. е.`;

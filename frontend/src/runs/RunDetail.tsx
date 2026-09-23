@@ -3,7 +3,7 @@ import { NavLink, useParams } from 'react-router-dom';
 import { Check, FlaskConical, Play, RefreshCw, Square } from 'lucide-react';
 import { api } from '../api/client';
 import type { Meta, Run } from '../api/types';
-import { channelLabels, formatEffect, formatNumber, isActive, statusLabels } from './presentation';
+import { channelLabels, formatNumber, isActive, statusLabels } from './presentation';
 import RunResults from './RunResults';
 import { useRun } from './useRun';
 import './runs.css';
@@ -77,9 +77,9 @@ function Detail({ id, meta }: { id: string; meta: Meta }) {
   const usage = results?.totals ?? run.progress;
   const percent = run.progress?.percent;
   const metrics = [
-    { label: 'Остаток бюджета', value: usage ? formatNumber(Number(run.budget) - Number(usage.spent)) : '—', note: `из ${formatNumber(run.budget)} у. е.`, used: usage ? `${formatNumber(usage.spent)} у. е. потрачено` : 'Расходы ещё не получены' },
-    { label: 'Остаток контактов', value: usage ? formatNumber(run.max_contacts - usage.contacts_used) : '—', note: `из ${formatNumber(run.max_contacts)}`, used: usage ? `${formatNumber(usage.contacts_used)} использовано` : 'Данные ещё не получены' },
-    { label: 'Завершено пилотов', value: usage ? formatNumber(usage.pilots_completed) : '—', note: `из ${run.max_pilots}`, used: 'Учитываются в бюджете и контактах' },
+    { label: 'Остаток бюджета', value: usage?.spent != null ? formatNumber(Number(run.budget) - Number(usage.spent)) : '—', note: `из ${formatNumber(run.budget)} у. е.`, used: usage?.spent != null ? `${formatNumber(usage.spent)} у. е. потрачено` : 'Расходы ещё не получены' },
+    { label: 'Остаток контактов', value: usage?.contacts_used != null ? formatNumber(run.max_contacts - usage.contacts_used) : '—', note: `из ${formatNumber(run.max_contacts)}`, used: usage?.contacts_used != null ? `${formatNumber(usage.contacts_used)} использовано` : 'Данные ещё не получены' },
+    { label: 'Завершено пилотов', value: run.progress ? formatNumber(run.progress.pilots_completed) : '—', note: `из ${run.max_pilots}`, used: 'Учитываются в бюджете и контактах' },
   ];
 
   return <div className="run-detail">
@@ -87,6 +87,7 @@ function Detail({ id, meta }: { id: string; meta: Meta }) {
     <div className="section-heading"><div><h1>{run.name}</h1><p className="run-meta">Создан {new Date(run.created_at).toLocaleString('ru-RU')} · {run.strategy === 'openai' ? 'AI-стратегия' : 'Базовая стратегия'}</p></div>
       <span className={`badge status-${run.status}`} role="status">{statusLabels[run.status]}</span></div>
     <Stepper status={run.status} />
+    {meta.environment && <div className="notice">{meta.environment.label}</div>}
     {error && <div className="notice error" role="alert">{error}<p>Показаны последние полученные данные.</p><button className="button" onClick={retry} disabled={loading}><RefreshCw size={15} />Повторить обновление</button></div>}
     {actionError && <div className="notice error" role="alert">{actionError}</div>}
 
@@ -117,7 +118,7 @@ function Detail({ id, meta }: { id: string; meta: Meta }) {
         <ol className="event-list">{events.map(event => <li key={event.id} className={`event-${event.kind}`}>
           <time dateTime={event.created_at}>{new Date(event.created_at).toLocaleString('ru-RU')}</time><div><strong>{event.message}</strong>
             {event.pilot && <div className="pilot-details"><p>{event.pilot.campaign_name} · {event.pilot.target_tariff} · {channelLabels[event.pilot.channel]}</p>
-              <dl><div><dt>Клиенты</dt><dd>{formatNumber(event.pilot.customers)}</dd></div><div><dt>Расходы</dt><dd>{formatNumber(event.pilot.cost)} у. е.</dd></div><div><dt>Эффект пилота</dt><dd>{formatEffect(event.pilot.observed_effect)}</dd></div></dl></div>}</div>
+              <dl><div><dt>Клиенты</dt><dd>{formatNumber(event.pilot.customers)}</dd></div><div><dt>Расходы</dt><dd>{formatNumber(event.pilot.cost)} у. е.</dd></div><div><dt>Наблюдаемый прирост ARPU</dt><dd>{event.pilot.observed_lift_ratio == null ? 'Нет данных' : `${formatNumber(event.pilot.observed_lift_ratio * 100)}%`}</dd></div></dl></div>}</div>
         </li>)}</ol>}
     </section>
   </div>;

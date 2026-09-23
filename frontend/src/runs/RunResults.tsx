@@ -12,6 +12,7 @@ export default function RunResults({ results, exporting, canExport, onExport }: 
         <Download size={17} />{exporting ? 'Скачиваем…' : 'Скачать CSV'}</button></div>
     {!canExport && <p className="subtle">Экспорт пока недоступен на сервере.</p>}
     {!results ? <div className="panel"><p role="status">Ожидаем сохранённые результаты расчёта.</p></div> : <>
+      {results.warnings.length > 0 && <div className="notice"><h3>Ограничения прогноза</h3><ul>{results.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div>}
       <div className="effect-summary">
         <div aria-label="Прогнозный эффект"><span>Прогнозный эффект</span><strong>{formatEffect(results.totals.forecast_effect)}</strong><p>Оценка на основе пилотов</p></div>
         <div aria-label="Результат симуляции"><span>Результат симуляции</span><strong>{formatEffect(results.totals.simulated_effect)}</strong><p>Фактический ответ симулятора</p></div>

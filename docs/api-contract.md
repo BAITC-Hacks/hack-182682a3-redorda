@@ -11,7 +11,7 @@ React → `/api/v1/` → Django 5.2 → Celery → общий `campaign_engine` 
 разделения планов по владельцам пока нет. Пользователь создаётся администратором
 через `manage.py createsuperuser`; публичной регистрации и встроенных паролей нет.
 
-Frontend использует один origin, `credentials: 'include'` и следующий порядок:
+Frontend использует один origin, `credentials: 'same-origin'` и следующий порядок:
 
 1. `GET auth/me/` → `{authenticated: false, user: null}` либо данные текущего пользователя.
 2. `GET auth/csrf/` → `{csrf_token: string}`; ответ также устанавливает cookie `csrftoken`.
@@ -25,13 +25,12 @@ Frontend использует один origin, `credentials: 'include'` и сл�
 `invalid_credentials`; отсутствие сессии: 403 `not_authenticated`; ошибка CSRF:
 403 `csrf_failed` на login/logout либо `permission_denied` на остальных POST.
 Ограничение login: 10 попыток/минуту на IP, затем 429 `throttled`.
-При 401/403 frontend останавливает polling и показывает вход; CSRF обновляется через
+При `not_authenticated` frontend останавливает polling и показывает вход; CSRF обновляется через
 `auth/csrf/`. Пароль и session cookie не сохраняются в localStorage.
 
 `health/`, `ready/`, auth discovery, `/api/schema/` и `/api/docs/` доступны без входа.
-Данные и операции API требуют сессии в публичном режиме. Контракт подготовлен для frontend; его
-подключение и обновление TypeScript-типов остаются задачей frontend-разработчика.
-Файлы frontend при этой интеграции не изменялись.
+Данные и операции API требуют сессии в публичном режиме. Frontend подключён к этому
+контракту; wire-типы и адаптеры представления находятся в `frontend/src/api/`.
 
 ## Маршруты
 
@@ -39,7 +38,7 @@ Frontend использует один origin, `credentials: 'include'` и сл�
 | --- | --- | --- |
 | GET | `health/` | Доступность Django и БД |
 | GET | `ready/` | 200: `{status: "ok", database: true, broker: true}`; 503 при сбое БД/Redis |
-| GET | `meta/` | Лимиты, стоимость каналов, флаги функций |
+| GET | `meta/` | Лимиты, стоимость каналов, флаги функций, `environment: {mode, label}` |
 | GET | `datasets/current/` | Импортированная сводка; 404 при отсутствии |
 | GET / POST | `runs/` | История / сохранение черновика; без датасета 409 `dataset_required` |
 | GET | `runs/{id}/` | Состояние и параметры плана |
@@ -79,12 +78,19 @@ ID — UUID; время — ISO 8601; деньги — decimal-строки. С�
 503 `execution_unavailable`, запуск становится failed с событием `queue_unavailable`.
 Секреты, traceback и пути среды не входят в публичные ответы.
 
-**Текущий блокер:** общий `Agent.act` не реализован; адаптер публичной среды не подключён.
-По умолчанию `REDORDA_RUN_EXECUTION_ENABLED=0`, `REDORDA_ENVIRONMENT_FACTORY` пуст.
-`meta.features.run_execution=false`, `start/` возвращает 503 `engine_unavailable`,
-черновик остаётся draft, сообщения в Redis не отправляются. Для включения нужны
-готовый агент, factory `(EngineContext) -> AgentEnvironment` и явное значение флага `1`.
-При ошибочном включении неготовый движок также завершается `engine_unavailable` в worker.
+Backend вызывает общий `run_campaigns` с бюджетом, контактами, числом пилотов,
+seed и стратегией конкретного запуска, историей датасета, наблюдателем и отменой.
+По умолчанию `REDORDA_RUN_EXECUTION_ENABLED=0`; в примерах `.env` задано `1`.
+Встроенная factory `apps.campaigns.services.public_environment.local_simulation`
+использует только публичный `make_mock_env` официального пакета, seed запуска и CSV
+его датасета. Код загружается из `PARTICIPANT_KIT_DIR` (по умолчанию
+`data/participant-kit`) после проверки SHA-256; из каталогов загруженных данных
+Python-код не исполняется. Приватный второй результат factory не изучается.
+`meta.environment.mode=local_simulation` явно обозначает учебную среду, не судейство.
+Без проверенного пакета или флага `1` `meta.features.run_execution=false`,
+`start/` возвращает 503 `engine_unavailable`, черновик не меняется.
+Внешнюю среду можно подключить через `REDORDA_ENVIRONMENT_FACTORY`:
+factory `(EngineContext) -> AgentEnvironment`; тогда режим называется `external`.
 
 `csv_export=true` обозначает реализацию экспорта сохранённых результатов;
 `openai_strategy=false`, поскольку HTTP API пока принимает только baseline.
@@ -93,9 +99,9 @@ hard limit 600 с и guard через 610 с после постановки в 
 worker guard выполнится после восстановления worker; API не обещает мгновенной
 фиксации сбоя при полной остановке инфраструктуры.
 
-Перед каждым пилотом backend проверяет число пилотов, запрошенные контакты и
-максимальную стоимость по публичным ценам каналов. Запрос, превышающий остаток,
-отклоняется целиком. Ответ среды должен содержать фактические `cost`, `n_customers`.
+Перед каждым пилотом backend проверяет число пилотов, доступную аудиторию,
+контакты и стоимость по публичным ценам каналов с учётом ограничения выборки средой.
+Ответ среды должен содержать фактические `cost`, `n_customers`.
 Перед completed повторно проверяются сохранённые кампании и все известные расходы.
 AI-разработчик отвечает за соблюдение лимитов публичной среды, выборку аудитории
 финальных кампаний и проверку общих расходов при неизвестных backend метриках.
@@ -108,5 +114,9 @@ totals, warnings}`. Неизвестные расходы/контакты/эф�
 `parameters` содержит фильтры аудитории, `target_tariff` и `channel`;
 `metrics.cost` и `metrics.n_contacts` присутствуют всегда, при отсутствии данных
 равны `null`. Пустое объяснение возвращается как `null`. Событие
-`pilot_completed` содержит номер, канал, запрошенное и фактическое число
-клиентов и фактическую стоимость пилота.
+`pilot_completed` общего runner содержит `request`, `observation`, `posterior`;
+в `observation` находятся фактические `n_customers`, `cost` и `observed_lift_ratio`.
+Последнее — доля прироста ARPU, не денежный эффект. Frontend также читает старые
+плоские события. Полный `EngineResult` сохраняется внутренне, публичный результат
+отдаёт кампании, суммарный прогноз и ограничения. `simulator_result=null`: приватный
+оценщик не вызывается и судейский результат не выдумывается.
