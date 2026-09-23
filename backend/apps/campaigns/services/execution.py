@@ -19,6 +19,10 @@ class ExecutionUnavailable(Exception):
     """The calculation could not be queued or its engine is unavailable."""
 
 
+class EngineNotReady(Exception):
+    """A new calculation cannot start until the public agent is connected."""
+
+
 def _task_id(run_id, key):
     digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
     return str(uuid.uuid5(uuid.UUID(str(run_id)), digest))
@@ -28,7 +32,7 @@ def _event(run, kind, payload=None):
     return RunEvent.objects.create(run=run, kind=kind, payload=payload or {})
 
 
-def start_run(run_id, *, idempotency_key):
+def start_run(run_id, *, idempotency_key, execution_available=True):
     """Queue a draft once; matching retries return the same run."""
     if not isinstance(idempotency_key, str) or not idempotency_key.strip():
         raise ExecutionConflict("Idempotency-Key is required")
@@ -41,6 +45,8 @@ def start_run(run_id, *, idempotency_key):
             if run.task_id == task_id:
                 return run
             raise ExecutionConflict("Calculation has already been started")
+        if not execution_available:
+            raise EngineNotReady()
         run.status = CampaignRun.Status.QUEUED
         run.task_id = task_id
         run.cancel_requested = False

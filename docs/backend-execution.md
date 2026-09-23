@@ -1,9 +1,11 @@
 # Backend execution
 
-The HTTP layer calls `start_run(run_id, *, idempotency_key)` and
+The HTTP layer calls `start_run(run_id, *, idempotency_key, execution_available)` and
 `request_cancel(run_id)`. Both return `CampaignRun` and raise
 `ExecutionConflict` for an invalid transition. `start_run` raises
-`ExecutionUnavailable` when publication fails. They do not return DRF objects.
+`ExecutionUnavailable` when publication fails. A new draft with execution disabled
+raises `EngineNotReady`; a retry with the same key is returned before that gate.
+They do not return DRF objects.
 
 `start_run` locks the run row and changes `draft` to `queued` exactly once. A
 deterministic Celery task ID derived from the run UUID and idempotency key is

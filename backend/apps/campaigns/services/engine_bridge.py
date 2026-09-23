@@ -120,7 +120,9 @@ def run_engine(run, *, check_cancel, runner=None):
                                  response=_json(response), cost=cost, n_customers=n_customers)
             RunEvent.objects.create(run=run, kind="pilot_completed",
                                     payload={"sequence": sequence, "cost": str(cost),
-                                             "n_customers": n_customers})
+                                             "n_customers": n_customers,
+                                             "requested_customers": request.get("n_customers", 100),
+                                             "channel": request["channel"]})
 
     before_step()
     observed = ObservedEnvironment(environment, before_step=before_step,

@@ -23,7 +23,9 @@ Base URL: `/api/v1/`. JSON-запросы и ответы используют U
 | `seed` | целое | 42 | 0–2147483647 |
 | `strategy` | строка | `baseline` | Только `baseline` до подключения стратегии OpenAI |
 
-Неизвестные поля, в том числе `status`, отклоняются. Каждый объект `Run` содержит `id`, `name`, `dataset_id`, `status`, `budget`, `max_contacts`, `max_pilots`, `seed`, `strategy`, `created_at`. Статусы: `draft`, `queued`, `running`, `completed`, `failed`, `cancelled`.
+Неизвестные поля, в том числе `status`, отклоняются. Каждый объект `Run` содержит `id`, `name`, `dataset_id`, `status`, `budget`, `max_contacts`, `max_pilots`, `seed`, `strategy`, `created_at`, `progress`, `error`, `cancellation_requested`. Статусы: `draft`, `queued`, `running`, `completed`, `failed`, `cancelled`.
+
+`progress` имеет поля `stage` (текущий статус или `finalizing`, когда при `running` уже сохранены кампании), `percent` (0–100), `spent_budget` (decimal-строка учтённых расходов пилотов и кампаний либо `null`), `used_contacts` (учтённые контакты либо `null`), `completed_pilots` (число сохранённых пилотов). Если стоимость или контакты хотя бы одной сохранённой кампании отсутствуют, соответствующее поле равно `null`. До старта процент равен 0, после `completed` — 100; в остальных состояниях это оценка по числу пилотов относительно лимита и по началу сохранения кампаний, потому что агент вправе завершить работу раньше. `error` равен `null`, кроме `failed`, где содержит безопасные `code` и `message` без текста внутреннего исключения. `cancellation_requested` показывает принятый запрос остановки отдельно от статуса: при `running` он становится `true` до перехода в `cancelled`.
 
 ## Операции расчёта
 
@@ -57,7 +59,7 @@ Base URL: `/api/v1/`. JSON-запросы и ответы используют U
 }
 ```
 
-`campaign_cost`, `total_cost`, `total_contacts`, `predicted_effect` и `simulator_result` могут быть `null`, если расчёт их не предоставил; `warnings` объясняет отсутствие данных. `parameters` — параметры кампании по публичному контракту движка; `metrics` и значения прогноза/симуляции — сохранённые сервисом результата JSON-объекты. Отсутствующие расчёты не заменяются выдуманными значениями. Экспорт содержит заголовок и до 10 строк кампаний с колонками `campaign_name,filter_arpu_segment,filter_data_segment,filter_call_segment,filter_current_tariff,target_tariff,channel`.
+`campaign_cost`, `total_cost`, `total_contacts`, `predicted_effect` и `simulator_result` могут быть `null`, если расчёт их не предоставил; `warnings` объясняет отсутствие данных. `parameters` включает фильтры аудитории, `target_tariff` и `channel` по публичному контракту движка. `metrics.cost` и `metrics.n_contacts` всегда есть, но равны `null`, если движок их не предоставил; `explanation` также может быть `null`. Прогноз и результат симуляции сохраняются отдельно в `totals`. Отсутствующие расчёты не заменяются выдуманными значениями. Экспорт содержит заголовок и до 10 строк кампаний с колонками `campaign_name,filter_arpu_segment,filter_data_segment,filter_call_segment,filter_current_tariff,target_tariff,channel`.
 
 ## Ошибки
 
