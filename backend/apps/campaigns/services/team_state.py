@@ -160,6 +160,11 @@ def get_team_snapshot(*, run_id) -> dict:
         engine = {"schema_version": 1, "engine_version": (
             summary.get("metadata", {}).get("engine_version") if summary else None),
             "dataset_checksum": run.dataset.checksum,
+            "evidence_ids": [*run.events.filter(
+                id__lte=cursor, kind__in=["pilot_completed", "pilot_estimate_updated",
+                                          "portfolio_updated"]).values_list("id", flat=True),
+                *(item["id"] for item in artifacts if item["type"] in {
+                    "pilot_observation", "portfolio", "hypotheses"})],
             "config": {"budget": str(run.budget), "max_contacts": run.max_contacts,
                        "max_pilots": run.max_pilots, "seed": run.seed,
                        "strategy": run.strategy, "constraints": run.constraints},
