@@ -201,16 +201,16 @@ export default function RunDetail({ meta, petHomeRef }: { meta: Meta; petHomeRef
     {!current ? !loadError && <p role="status">Загружаем план…</p> : <>
       <div className="section-heading"><div><h1>{current.name}</h1><p className="subtle run-subtitle">{current.strategy === 'openai' ? 'Гипотезы OpenAI + расчётная стратегия' : 'Расчётная стратегия'} · Seed {current.seed}</p></div>
         <span className={`badge status-${current.status}`}>{statuses[current.status]}</span></div>
-      <div className="stats-grid"><article className="stat"><div className="stat-label">Бюджет</div><strong>{format(current.budget)}</strong><small>у. е. · расход {format(current.progress.spent_budget)} · остаток {current.progress.spent_budget === null ? '—' : format(Math.max(0, Number(current.budget) - Number(current.progress.spent_budget)))}</small></article>
-        <article className="stat"><div className="stat-label">Контакты</div><strong>{format(current.progress.used_contacts)}</strong><small>Лимит {format(current.max_contacts)} · включая пилоты</small></article>
-        <article className="stat"><div className="stat-label">Завершено пилотов</div><strong>{current.progress.completed_pilots} / {current.max_pilots}</strong><small>Агент может закончить раньше лимита</small></article></div>
+      <div className="stats-grid"><article className="stat"><div className="stat-label">Бюджет</div><strong>{format(current.budget)}</strong><small>у. е. · расход {format(current.progress?.spent_budget)} · остаток {current.progress?.spent_budget == null ? '—' : format(Math.max(0, Number(current.budget) - Number(current.progress.spent_budget)))}</small></article>
+        <article className="stat"><div className="stat-label">Контакты</div><strong>{format(current.progress?.used_contacts)}</strong><small>Лимит {format(current.max_contacts)} · включая пилоты</small></article>
+        <article className="stat"><div className="stat-label">Завершено пилотов</div><strong>{format(current.progress?.completed_pilots)} / {format(current.max_pilots)}</strong><small>Агент может закончить раньше лимита</small></article></div>
       {actionError != null && <Failure error={actionError} />}
       {events.some(event => event.kind === 'fallback_used') && <div className="notice">Гипотезы OpenAI недоступны. Агент продолжает работу с расчётными гипотезами.</div>}
       <div className="panel run-control">
         {current.status === 'draft' ? <><div><h2>План готов к запуску</h2><p>{meta.features.run_execution ? 'Агент проверит гипотезы на пилотах и соберёт кампании в пределах бюджета.' : 'Расчёты временно отключены на сервере.'}</p></div>
           <button className="button primary" onClick={() => void perform('start')} disabled={action !== null || !meta.features.run_execution}><Play size={16} />{action === 'start' ? 'Запускаем…' : 'Запустить агента'}</button></> : <>
-          <div className="run-progress"><div className="section-heading"><h2>{current.progress.stage === 'finalizing' ? 'Сохраняем результаты' : statuses[current.status]}</h2><span>{current.progress.percent}%</span></div>
-            <progress value={current.progress.percent} max={100} aria-label="Прогресс расчёта" />
+          <div className="run-progress"><div className="section-heading"><h2>{current.progress?.stage === 'finalizing' ? 'Сохраняем результаты' : statuses[current.status]}</h2><span>{current.progress?.percent == null ? '—' : `${format(current.progress.percent)}%`}</span></div>
+            {current.progress?.percent != null && <progress value={current.progress.percent} max={100} aria-label="Прогресс расчёта" />}
             <p>{current.status === 'queued' ? 'Ожидаем свободный процесс расчёта.' : current.status === 'running'
               ? current.cancellation_requested ? 'Отмена запрошена. Завершаем текущий шаг.' : 'Проверяем гипотезы. Прогресс обновляется каждые 2 секунды.'
               : current.status === 'cancelled' ? 'Расчёт остановлен. Выполненные пилоты сохранены.' : current.status === 'failed' ? current.error?.message || 'Расчёт завершился с ошибкой.' : 'Кампании и результаты сохранены.'}</p>
