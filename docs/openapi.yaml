@@ -1,0 +1,405 @@
+openapi: 3.0.3
+info:
+  title: RedOrda Campaign API
+  version: 1.0.0
+paths:
+  /api/schema/:
+    get:
+      operationId: schema_retrieve
+      description: |-
+        OpenApi3 schema for this API. Format can be selected via content negotiation.
+
+        - YAML: application/vnd.oai.openapi
+        - JSON: application/vnd.oai.openapi+json
+      parameters:
+      - in: query
+        name: format
+        schema:
+          type: string
+          enum:
+          - json
+          - yaml
+      - in: query
+        name: lang
+        schema:
+          type: string
+          enum:
+          - af
+          - ar
+          - ar-dz
+          - ast
+          - az
+          - be
+          - bg
+          - bn
+          - br
+          - bs
+          - ca
+          - ckb
+          - cs
+          - cy
+          - da
+          - de
+          - dsb
+          - el
+          - en
+          - en-au
+          - en-gb
+          - eo
+          - es
+          - es-ar
+          - es-co
+          - es-mx
+          - es-ni
+          - es-ve
+          - et
+          - eu
+          - fa
+          - fi
+          - fr
+          - fy
+          - ga
+          - gd
+          - gl
+          - he
+          - hi
+          - hr
+          - hsb
+          - hu
+          - hy
+          - ia
+          - id
+          - ig
+          - io
+          - is
+          - it
+          - ja
+          - ka
+          - kab
+          - kk
+          - km
+          - kn
+          - ko
+          - ky
+          - lb
+          - lt
+          - lv
+          - mk
+          - ml
+          - mn
+          - mr
+          - ms
+          - my
+          - nb
+          - ne
+          - nl
+          - nn
+          - os
+          - pa
+          - pl
+          - pt
+          - pt-br
+          - ro
+          - ru
+          - sk
+          - sl
+          - sq
+          - sr
+          - sr-latn
+          - sv
+          - sw
+          - ta
+          - te
+          - tg
+          - th
+          - tk
+          - tr
+          - tt
+          - udm
+          - ug
+          - uk
+          - ur
+          - uz
+          - vi
+          - zh-hans
+          - zh-hant
+      tags:
+      - schema
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/vnd.oai.openapi:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/yaml:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/vnd.oai.openapi+json:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/datasets/current/:
+    get:
+      operationId: v1_datasets_current_retrieve
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+          description: ''
+  /api/v1/health/:
+    get:
+      operationId: v1_health_retrieve
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+          description: ''
+  /api/v1/meta/:
+    get:
+      operationId: v1_meta_retrieve
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Meta'
+          description: ''
+  /api/v1/runs/:
+    get:
+      operationId: v1_runs_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRunList'
+          description: ''
+    post:
+      operationId: v1_runs_create
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Run'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Run'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Run'
+        required: true
+      security:
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+          description: ''
+  /api/v1/runs/{id}/:
+    get:
+      operationId: v1_runs_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this campaign run.
+        required: true
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+          description: ''
+components:
+  schemas:
+    Dataset:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 160
+        checksum:
+          type: string
+          maxLength: 64
+        customer_count:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        summary: {}
+        imported_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - checksum
+      - customer_count
+      - id
+      - imported_at
+      - name
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+      required:
+      - service
+      - status
+    Meta:
+      type: object
+      properties:
+        limits:
+          type: object
+          additionalProperties: {}
+        channel_costs:
+          type: object
+          additionalProperties: {}
+        features:
+          type: object
+          additionalProperties: {}
+      required:
+      - channel_costs
+      - features
+      - limits
+    PaginatedRunList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Run'
+    Run:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        dataset_id:
+          type: string
+          format: uuid
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusEnum'
+          readOnly: true
+        budget:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+        max_contacts:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        max_pilots:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        seed:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        strategy:
+          type: string
+          maxLength: 16
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - dataset_id
+      - id
+      - name
+      - status
+    StatusEnum:
+      enum:
+      - draft
+      - queued
+      - running
+      - completed
+      - failed
+      - cancelled
+      type: string
+      description: |-
+        * `draft` - Черновик
+        * `queued` - В очереди
+        * `running` - Выполняется
+        * `completed` - Завершён
+        * `failed` - Ошибка
+        * `cancelled` - Отменён

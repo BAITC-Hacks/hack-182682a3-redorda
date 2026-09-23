@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "redorda-campaign-engine"
+version = "0.1.0"
+description = "Shared Beeline campaign planning engine and web application dependencies"
+requires-python = ">=3.11"
+dependencies = [
+  "Django>=5.2,<5.3",
+  "djangorestframework>=3.16,<3.17",
+  "drf-spectacular>=0.28,<0.30",
+  "dj-database-url>=2.3,<4",
+  "python-dotenv>=1,<2",
+  "psycopg[binary]>=3.2,<4",
+  "celery[redis]>=5.5,<6",
+  "gunicorn>=23,<24",
+  "openai>=2,<3",
+  "pydantic>=2.10,<3",
+  "pandas>=2.2,<3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "pytest-django>=4.10,<5", "ruff>=0.11,<1"]
+
+[tool.setuptools.packages.find]
+where = ["packages"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+pythonpath = ["backend", "packages", "."]
+testpaths = ["backend/tests", "packages/campaign_engine/tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = ["data/participant-kit", "backend/apps/campaigns/migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

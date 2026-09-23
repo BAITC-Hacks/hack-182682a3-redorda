@@ -1,0 +1,3 @@
+# Install from repository root. Lock includes development tools for reproducible team setup.
+-r requirements.lock
+-e .
