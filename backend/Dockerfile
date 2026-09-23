@@ -7,9 +7,10 @@ RUN pip install --no-cache-dir -r requirements.lock && pip install --no-cache-di
 COPY backend ./backend
 COPY agent.py ./
 COPY scripts ./scripts
+COPY data/demo ./data/demo
 RUN python backend/manage.py collectstatic --noinput && \
     useradd --uid 10001 --create-home redorda && \
-    mkdir -p artifacts data/participant-kit && chown -R redorda:redorda /workspace
+    mkdir -p artifacts data/participant-kit backend/media && chown -R redorda:redorda /workspace
 USER redorda
 EXPOSE 8000
 CMD ["gunicorn", "--chdir", "backend", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeout", "60"]
