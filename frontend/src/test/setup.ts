@@ -3,3 +3,11 @@ import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); sessionStorage.clear(); });
+
+class NoopIntersectionObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+globalThis.IntersectionObserver = NoopIntersectionObserver as unknown as typeof IntersectionObserver;

@@ -28,3 +28,9 @@
 .login-submit{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:52px;padding:0 19px;border:0;border-radius:9px;background:var(--yellow);font-weight:800;color:#262b31}
 .login-submit:hover:not(:disabled){background:#f0c015}
 @media(max-width:760px){.login-page{grid-template-columns:1fr}.login-intro{min-height:190px;padding:22px;background:linear-gradient(115deg,#163e74,#3775b7 74%,#e5a94b)}.login-brand{font-size:24px}.login-brand img{width:38px;height:38px}.login-intro-copy{margin-top:24px}.login-intro-copy span,.login-intro small{display:none}.login-intro-copy p{font-size:24px;letter-spacing:-.8px;max-width:330px}.login-main{padding:40px 22px 70px;place-items:start center}.login-panel>p{margin-bottom:28px}}
+.session-check{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:14px;padding:24px;text-align:center}
+.header-actions{display:flex;align-items:center;gap:20px}
+.header-user{color:#4b554d;font-weight:700}
+.logout-button{border:1px solid var(--border);border-radius:7px;background:#fff;padding:9px 12px;color:#4b554d;font-size:11px;font-weight:700}
+.logout-button:hover:not(:disabled){background:#f6f7f4}
+@media(max-width:760px){.header-actions{gap:10px}.header-actions .connection{display:none}.logout-button{padding:8px 10px}}

@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { NavLink, Route, Routes, useNavigate } from 'react-router-dom';
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, ChartNoAxesCombined, CircleDot, Database, FlaskConical, Layers,
   Plus, RefreshCw, Signal, Wallet, Users, ChevronRight } from 'lucide-react';
 import { api, ApiError } from './api/client';
-import type { Dataset as DatasetType, Meta, Page, Run } from './api/types';
+import type { Dataset as DatasetType, Meta, Page, Run, Session } from './api/types';
 import CountUp from './components/react-bits/CountUp';
 import SpotlightCard from './components/react-bits/SpotlightCard';
 import RunDetail from './runs/RunDetail';
 import { statusLabels } from './runs/presentation';
+import LoginPage from './components/LoginPage';
 
 const number = (value: number | string) => new Intl.NumberFormat('ru-RU', {
   maximumFractionDigits: 0,
@@ -114,7 +115,9 @@ function NewRun({ dataset, meta }: { dataset: DatasetType | null; meta: Meta }) 
   </>;
 }
 
-export default function App() {
+function Dashboard({ session, onLogout, logoutBusy, logoutError }: {
+  session: Session; onLogout: () => void; logoutBusy: boolean; logoutError: unknown;
+}) {
   const [dataset, setDataset] = useState<DatasetType | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -131,9 +134,9 @@ export default function App() {
       <NavLink to="/" end><ChartNoAxesCombined size={19} />Обзор</NavLink>
       <NavLink to="/runs"><FlaskConical size={19} />Планы кампаний</NavLink>
       <NavLink to="/data"><Database size={19} />Аудитория</NavLink>
-    </nav><div className="sidebar-bottom"><span className="team-avatar">R</span><div><strong>Команда RedOrda</strong><small>Рабочее пространство</small></div></div></aside>
-    <div className="main-shell"><header><span>Маркетинговая аналитика</span><div className="connection"><i className={meta ? 'connected' : ''} />{meta ? 'Сервис доступен' : error ? 'Нет соединения' : 'Подключение…'}</div></header>
-      <main>{error ? <><ErrorMessage error={error} /><button className="button" onClick={() => setRetry(n => n + 1)}><RefreshCw size={16} />Повторить</button></> : !meta ? <p role="status">Подключаемся к сервису…</p> : <Routes>
+    </nav><div className="sidebar-bottom"><span className="team-avatar">{session.user?.username.slice(0, 1).toUpperCase()}</span><div><strong>{session.user?.username}</strong><small>Рабочее пространство</small></div></div></aside>
+    <div className="main-shell"><header><span>Маркетинговая аналитика</span><div className="header-actions"><div className="connection"><i className={meta ? 'connected' : ''} />{meta ? 'Сервис доступен' : error ? 'Нет соединения' : 'Подключение…'}</div><span className="header-user">{session.user?.username}</span><button className="logout-button" onClick={onLogout} disabled={logoutBusy}>{logoutBusy ? 'Выходим…' : 'Выйти'}</button></div></header>
+      <main>{logoutError !== null && <ErrorMessage error={logoutError} />}{error ? <><ErrorMessage error={error} /><button className="button" onClick={() => setRetry(n => n + 1)}><RefreshCw size={16} />Повторить</button></> : !meta ? <p role="status">Подключаемся к сервису…</p> : <Routes>
         <Route path="/" element={<Overview dataset={dataset} meta={meta} />} />
         <Route path="/data" element={<DataPage dataset={dataset} />} />
         <Route path="/runs" element={<RunsPage />} />
@@ -142,4 +145,57 @@ export default function App() {
         <Route path="*" element={<><h1>Страница не найдена</h1><NavLink to="/">На главную</NavLink></>} />
       </Routes>}</main><footer>RedOrda © 2026 <span>HackAlem AI · Beeline Tariff Marketing Campaigns</span></footer>
     </div></div>;
+}
+
+export default function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
+  const [sessionError, setSessionError] = useState<unknown>(null);
+  const [logoutError, setLogoutError] = useState<unknown>(null);
+  const [logoutBusy, setLogoutBusy] = useState(false);
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setSessionError(null);
+    api.me().then(value => { if (active) setSession(value.authenticated && value.user ? value : null); })
+      .catch(cause => { if (active) setSessionError(cause); });
+    return () => { active = false; };
+  }, [retry]);
+
+  useEffect(() => api.onUnauthorized(() => {
+    setSession(null);
+    setLogoutError(null);
+  }), []);
+
+  async function logout() {
+    if (logoutBusy) return;
+    setLogoutBusy(true);
+    setLogoutError(null);
+    try {
+      await api.logout();
+      navigate('/login', { replace: true });
+      setSession(null);
+    } catch (cause) {
+      setLogoutError(cause);
+    } finally {
+      setLogoutBusy(false);
+    }
+  }
+
+  if (sessionError !== null) return <div className="session-check"><ErrorMessage error={sessionError} />
+    <button className="button" onClick={() => { setSessionError(null); setRetry(value => value + 1); }}>Повторить</button></div>;
+  if (session === undefined) return <div className="session-check" role="status">Проверяем вход…</div>;
+  if (!session) {
+    if (location.pathname !== '/login') return <Navigate to="/login" replace
+      state={{ from: location.pathname + location.search + location.hash }} />;
+    return <LoginPage onAuthenticated={setSession} />;
+  }
+  if (location.pathname === '/login') {
+    const from = (location.state as { from?: unknown } | null)?.from;
+    return <Navigate to={typeof from === 'string' && from.startsWith('/') && !from.startsWith('//')
+      ? from : '/'} replace />;
+  }
+  return <Dashboard session={session} onLogout={logout} logoutBusy={logoutBusy} logoutError={logoutError} />;
 }
