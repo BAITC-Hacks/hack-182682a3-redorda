@@ -711,8 +711,13 @@ components:
             type: integer
         features:
           $ref: '#/components/schemas/MetaFeatures'
+        environment:
+          type: object
+          additionalProperties:
+            type: string
       required:
       - channel_costs
+      - environment
       - features
       - limits
     MetaFeatures:
