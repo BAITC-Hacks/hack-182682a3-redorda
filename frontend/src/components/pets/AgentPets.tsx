@@ -27,6 +27,7 @@ export default function AgentPets({ home }: { home: HTMLDivElement | null }) {
   const parcel = useRef<HTMLDivElement>(null);
   const dock = useRef<HTMLDivElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
+  const panelClose = useRef<HTMLButtonElement>(null);
   const frozen = paused || reducedMotion || !pageVisible;
 
   useEffect(() => {
@@ -57,6 +58,7 @@ export default function AgentPets({ home }: { home: HTMLDivElement | null }) {
 
   useEffect(() => {
     if (!panelOpen) return;
+    panelClose.current?.focus();
     const outside = (event: PointerEvent) => {
       if (!dock.current?.contains(event.target as Node)) setPanelOpen(false);
     };
@@ -163,7 +165,7 @@ export default function AgentPets({ home }: { home: HTMLDivElement | null }) {
     <div className="pet-dock" ref={dock}>
       {panelOpen && <section className={`pet-panel${!roaming && !home && !hidden ? ' has-office' : ''}`} id="pet-panel" aria-label="Настройки мини-агентов">
         <div className="pet-panel-heading"><div><strong>Твоя маленькая команда</strong><p>Четверо. Всегда рядом.</p></div>
-          <button type="button" className="pet-icon-button" aria-label="Закрыть настройки мини-агентов" onClick={() => { setPanelOpen(false); toggle.current?.focus(); }}><X size={16} /></button>
+          <button type="button" ref={panelClose} className="pet-icon-button" aria-label="Закрыть настройки мини-агентов" onClick={() => { setPanelOpen(false); toggle.current?.focus(); }}><X size={16} /></button>
         </div>
         {!hidden && !roaming && !home ? office : <div className="pet-roster">{PETS.map((pet, index) => <div key={pet.name}><PetAvatar petIndex={index} /><strong>{pet.name}</strong><span>{pet.role}</span></div>)}</div>}
         <p className="pet-panel-caption">Устроим маленькую сценку?</p>
@@ -177,7 +179,10 @@ export default function AgentPets({ home }: { home: HTMLDivElement | null }) {
         <button type="button" className="pet-mode-button" onClick={() => { setRoaming(value => !value); setHidden(false); if (!roaming || home) setPanelOpen(false); }}>
           {roaming ? 'Собрать всех в мини-офисе' : 'Выпустить на экран'}
         </button>
-        <button type="button" className="pet-hide-button" onClick={() => { setHidden(value => !value); setPanelOpen(false); toggle.current?.focus(); }}>
+        <button type="button" className="pet-hide-button" onClick={() => {
+          setHidden(value => !value);
+          if (!hidden || roaming || home) { setPanelOpen(false); toggle.current?.focus(); }
+        }}>
           {hidden ? 'Вернуть команду на экран' : 'Спрятать команду'}
         </button>
       </section>}
