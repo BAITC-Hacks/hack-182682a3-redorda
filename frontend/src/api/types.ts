@@ -14,7 +14,7 @@ export interface Dataset {
   };
 }
 
-export interface RunProgress {
+export interface ApiRunProgress {
   stage: 'draft' | 'queued' | 'running' | 'finalizing' | 'completed' | 'failed' | 'cancelled';
   percent: number;
   spent_budget: string | null;
@@ -33,12 +33,14 @@ export interface Run {
   seed: number;
   strategy: 'baseline' | 'openai';
   created_at: string;
-  progress: RunProgress;
-  error: { code: string; message: string } | null;
-  cancellation_requested: boolean;
+  progress?: RunProgress | null;
+  error?: { code: string; message: string } | null;
+  cancellation_requested?: boolean;
 }
 
-export interface RunEvent {
+export interface ApiRun extends Omit<Run, 'progress'> { progress: ApiRunProgress }
+
+export interface ApiRunEvent {
   id: number;
   kind: string;
   payload: Record<string, unknown>;
@@ -46,7 +48,7 @@ export interface RunEvent {
 }
 
 export interface RunEventsPage {
-  results: RunEvent[];
+  results: ApiRunEvent[];
   next_after: number;
   has_more: boolean;
 }
@@ -82,6 +84,54 @@ export interface RunResult {
   warnings: string[];
 }
 
+export interface RunProgress {
+  stage: string;
+  percent: number | null;
+  spent: string | null;
+  contacts_used: number | null;
+  pilots_completed: number;
+}
+
+export type Channel = 'push' | 'sms' | 'digital_ads' | 'call';
+
+export interface RunEvent {
+  id: number;
+  created_at: string;
+  kind: 'info' | 'pilot' | 'warning' | 'error';
+  message: string;
+  pilot?: {
+    campaign_name: string;
+    channel: Channel;
+    target_tariff: string;
+    customers: number | null;
+    cost: string | null;
+    observed_lift_ratio: number | null;
+  } | null;
+}
+
+export interface CampaignResult {
+  id: string;
+  campaign_name: string;
+  target_tariff: string;
+  channel: Channel;
+  audience: string;
+  customers: number | null;
+  cost: string | null;
+  forecast_effect: string | null;
+  rationale: string;
+}
+
+export interface RunResults {
+  campaigns: CampaignResult[];
+  warnings: string[];
+  totals: {
+    spent: string | null;
+    contacts_used: number | null;
+    forecast_effect: string | null;
+    simulated_effect: string | null;
+  };
+}
+
 export interface RunInput {
   name: string;
   budget: string;
@@ -99,7 +149,14 @@ export interface Page<T> {
 }
 
 export interface Meta {
+  environment?: { mode: string; label: string };
   limits: Record<string, number>;
   channel_costs: Record<string, number>;
   features: { run_execution: boolean; openai_strategy: boolean; csv_export: boolean };
+}
+
+export interface Session {
+  authenticated: boolean;
+  user: { id: number; username: string; is_staff: boolean } | null;
+  csrf_token?: string;
 }

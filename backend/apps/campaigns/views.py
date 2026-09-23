@@ -3,7 +3,7 @@ from itertools import chain
 from uuid import UUID
 
 from campaign_engine.contracts import CASE_LIMITS, CHANNEL_COSTS
-from config.runtime import execution_enabled
+from config.runtime import environment_description, execution_enabled
 from django.apps import apps
 from django.db import connection
 from django.http import StreamingHttpResponse
@@ -103,6 +103,7 @@ class MetaView(APIView):
         return Response({
             "limits": CASE_LIMITS,
             "channel_costs": CHANNEL_COSTS,
+            "environment": environment_description(),
             "features": {"run_execution": execution_enabled(), "openai_strategy": False,
                          "csv_export": True},
         })

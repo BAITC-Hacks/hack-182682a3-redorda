@@ -21,6 +21,7 @@ class MetaSerializer(serializers.Serializer):
     limits = serializers.DictField(child=serializers.IntegerField())
     channel_costs = serializers.DictField(child=serializers.IntegerField())
     features = MetaFeaturesSerializer()
+    environment = serializers.DictField(child=serializers.CharField())
 
 
 class DatasetSerializer(serializers.ModelSerializer):

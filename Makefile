@@ -33,4 +33,5 @@ check:
 	$(PYTHON) backend/manage.py check
 	$(PYTHON) backend/manage.py makemigrations --check --dry-run
 	$(PYTHON) -m pytest -q
+	npm --prefix frontend test
 	npm --prefix frontend run build
