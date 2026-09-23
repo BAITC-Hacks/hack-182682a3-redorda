@@ -245,6 +245,64 @@ def choose_pilot(
             options.pilot_contact_cap - pilot_contacts,
         )
 
+    if options.policy == "adaptive_choice_200":
+        # Research ablation: isolate arm choice from stopping and sample-size
+        # decisions. Defaults share fixed_200's first eight actions, followed by
+        # two adaptive choices. screening_pilots=1 is a separate stronger-choice
+        # ablation; it must be reported separately from the default eight.
+        if successful_pilots >= 10:
+            return None
+
+        def fixed_size_action(arm: Arm) -> PilotChoice | None:
+            bounded = feasible(arm, 200)
+            if bounded is None:
+                return None
+            full_actual = min(
+                len(index.cells[arm.current_tariff, arm.arpu_segment]), 200, official_contacts
+            )
+            if sms_cost:
+                full_actual = min(full_actual, int(official_budget // sms_cost))
+            # Keep the request exactly 200. Smaller actual samples are possible
+            # in small cells or through the public environment's resource cap;
+            # never impose a smaller local cap the environment cannot execute.
+            if full_actual != bounded.n_actual:
+                return None
+            return PilotChoice(arm, 200, full_actual, 0.0, "")
+
+        for candidate in candidates[: min(10, options.screening_pilots)]:
+            arm = candidate.arm
+            if arm not in beliefs or beliefs[arm].observations:
+                continue
+            action = fixed_size_action(arm)
+            if action:
+                return PilotChoice(
+                    arm, 200, action.n_actual, 0.0, "Controlled 200-customer fixed screening."
+                )
+        choices = []
+        for candidate in candidates:
+            action = fixed_size_action(candidate.arm)
+            if action is None:
+                continue
+            score = _pilot_information_score(
+                action, candidates, beliefs, index, sms_cost, multiplier, remaining_contacts
+            )
+            repeated = beliefs[action.arm].observations > 0
+            choices.append(
+                PilotChoice(
+                    action.arm,
+                    200,
+                    action.n_actual,
+                    score,
+                    "Controlled 200-customer adaptive choice; "
+                    + ("repeated arm." if repeated else "new arm."),
+                )
+            )
+        choices.sort(key=lambda action: (-action.score, action.arm))
+        if not choices or time.monotonic() >= deadline:
+            return None
+        # A negative score is deliberately not an early-stop condition here.
+        return choices[0]
+
     if options.policy in {"fixed_100", "fixed_200", "wide_100"}:
         width = 20 if options.policy == "wide_100" else 10
         rounds = 2 if options.policy == "fixed_100" else 1

@@ -136,6 +136,7 @@ def evaluate_one(evaluator, delegate, policy: str, seed: int) -> dict:
         "n_pilots": len(agent.pilot_observations),
         "n_final_campaigns": len(agent.campaigns) if isinstance(agent.campaigns, list) else 0,
         "campaigns": agent.campaigns,
+        "campaigns_detail": score.get("campaigns_detail", []),
         "pilot_observations": agent.pilot_observations,
         "public_resources": agent.public_resources,
         "validation": agent.validation,
@@ -147,6 +148,7 @@ def evaluate_one(evaluator, delegate, policy: str, seed: int) -> dict:
         record["engine_stop_reason"] = result.stop_reason
         record["pilot_requests"] = [pilot.request for pilot in result.pilots]
         record["warnings"] = result.warnings
+        record["engine_estimates"] = result.estimates
     return record
 
 
