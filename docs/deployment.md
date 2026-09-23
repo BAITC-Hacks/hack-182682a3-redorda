@@ -22,8 +22,10 @@ Cloudflare направляет `hack.1ge.kz` на `http://127.0.0.1:8103`.
 `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.oa.redorda.autodeploy.plist`.
 Логи polling: `logs/autodeploy.{out,err}.log`.
 
-Дополнительный канал после восстановления Actions: после push в `main`
-GitHub Actions выполняет проверки, затем отправляет подписанный
+Активный GitHub Actions workflow удалён в main коммитом `8f11873`. Его актуальный
+шаблон сохранён в `infra/ci/github-actions.yaml`; он не запускается автоматически.
+После восстановления workflow дополнительный канал сможет после push в `main`
+выполнять проверки PostgreSQL/Redis, frontend и Compose, затем отправлять подписанный
 запрос в существующий `https://hook.1ge.kz/github-webhook`. Секрет Actions:
 `MACMINI_WEBHOOK_SECRET`. Dispatcher сверяет имя репозитория
 `BAITC-Hacks/hack-182682a3-redorda` и вызывает `scripts/deploy-production-macos.sh`.
