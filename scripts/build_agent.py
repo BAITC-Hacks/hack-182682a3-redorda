@@ -192,23 +192,35 @@ DELIVERY_README = """# RedOrda — переносимый AI-агент
 
 `agent.py` объединяет модули общего движка. `build-manifest.json` содержит их SHA-256.
 
-Нужен Python 3.11+. Поместите `agent.py`, `local_eval.py` и `make_submission.py`
-в каталог с CSV-данными. Выполните из этого каталога:
+Нужен Python 3.11+ и полный распакованный participant kit с Python-модулями
+и CSV-данными. Скопируйте `agent.py` и `requirements.txt` из этой сборки в корень
+отдельной копии kit, рядом с `local_eval.py` и `make_submission.py`.
+Выполните из этого каталога:
 
 ```sh
-pip install -r requirements.txt
-python local_eval.py --runs 10
-python make_submission.py
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python local_eval.py --runs 10
+.venv/bin/python make_submission.py
 ```
 
-`make_submission.py` создаёт `submission.csv`.
+На Windows используйте `.venv\\Scripts\\python.exe` вместо `.venv/bin/python`.
+`make_submission.py` создаёт `submission.csv` с seed 42. Для проверки
+воспроизводимости выполните его в двух отдельных процессах и сравните CSV побайтово.
 
 История загружается из `data/change_tariff.csv` относительно каталога агента
 или из каталога, заданного абсолютным `PARTICIPANT_KIT_DIR`. Без этого файла
 движок использует расчётную стратегию и пилоты.
 
-`Agent.act(env)` работает в детерминированном режиме без вызовов LLM.
-Наличие API-ключа автоматически не включает сетевые запросы.
+`Agent.act(env)` использует `strategy=baseline` и адаптивную политику пилотов.
+После пилотов ограниченный поиск уточняет финальный портфель на фиксированных
+оценках эффекта; дополнительных пилотов он не проводит. По умолчанию поиск
+проверяет до 256 вариантов и ограничен 10 секундами. Сетевых
+вызовов нет; наличие API-ключа их не включает.
+
+Ограничение времени кооперативное: начатая оценка завершается. При остановке
+по `time_limit` результат может зависеть от скорости машины; при завершении по
+лимиту вариантов одинаковые данные и seed дают воспроизводимый результат.
 """
 
 

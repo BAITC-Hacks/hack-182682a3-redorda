@@ -31,6 +31,17 @@ PostgreSQL, живую очередь и сборку Compose. Действую�
 
 **AI-движок:** общий runner и `Agent.act`, анализ истории, адаптивные пилоты, оценки неопределённости, выбор каналов, проверка лимитов, события и отмена, GPT-6 с fallback/replay, воспроизводимый CSV и сборка автономного агента. [Контракт runner и подключение backend](docs/developers/02-agent-integration.md).
 
+По умолчанию `Agent()` использует `strategy=baseline` и политику пилотов `adaptive`.
+После пилотов ограниченный поиск уточняет финальный портфель на фиксированных
+оценках эффекта, не проводя дополнительных пилотов. По умолчанию он проверяет до
+256 вариантов, с ограничением времени 10 секунд. Он использует ту же функцию
+оценки и проверку лимитов, что и исходный портфель; улучшение прогноза не означает
+гарантированного улучшения результата симуляции.
+Ограничение времени кооперативное: начатая оценка завершается. При остановке
+по `time_limit` результат может зависеть от скорости машины; при завершении по
+лимиту вариантов одинаковые данные и seed дают воспроизводимый результат.
+[Алгоритм, протокол сравнения и границы поиска](docs/developers/02-portfolio-search.md).
+
 **Интеграция в коде:** backend подключён к общему runner через публичную среду,
 передаёт настройки, сохраняет события, наблюдения и прогнозы. Frontend использует
 login/CSRF, start/cancel, события, результаты и CSV; добавлены четыре пиксельных маскота.
@@ -112,6 +123,10 @@ CSV уже включены в `data/demo/`, скачивать пакет дл�
 
 Архив проверяется по SHA-256, файлы организаторов сохраняются без изменений в игнорируемую Git папку. Данные синтетические. Импорт повторяемый: в БД сохраняются отдельные профили абонентов и агрегированная сводка; интерфейс показывает агрегаты из CSV, не зашитые числа. Обновите страницу после импорта.
 
+Для команд `scripts/run_official.py` незаданный или пустой `PARTICIPANT_KIT_DIR`
+означает `data/participant-kit` относительно репозитория. Можно указать другой
+каталог; относительный путь также считается от корня репозитория.
+
 ## Все сервисы через Docker
 
 ```bash
@@ -143,18 +158,34 @@ make compose-check  # нужен Docker
 
 ## OpenAI и проверки
 
-Заполните серверный `.env`: `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_REASONING_EFFORT`. Режим `openai` использует [Responses API](https://developers.openai.com/api/docs/guides/latest-model) и [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs); при ошибке продолжает расчётную стратегию. По умолчанию `Agent()` работает без сетевых вызовов. Доступ к модели зависит от API-проекта.
+Режим `openai` использует [Responses API](https://developers.openai.com/api/docs/guides/latest-model) и [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs); при ошибке продолжает расчётную стратегию. Для него заполните серверный `.env`: `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_REASONING_EFFORT`. Модель по умолчанию — `gpt-6-sol`. `Agent()` и проверки ниже работают без сетевых вызовов.
 
 ```bash
-.venv/bin/python scripts/check_openai.py
 .venv/bin/python scripts/run_official.py local_eval --runs 10
 .venv/bin/python scripts/run_official.py make_submission
+cp artifacts/submission.csv artifacts/submission-seed42-first.csv
+.venv/bin/python scripts/run_official.py make_submission
+cmp artifacts/submission-seed42-first.csv artifacts/submission.csv
 .venv/bin/python scripts/build_agent.py --submission artifacts/submission.csv
 .venv/bin/python scripts/benchmark_agent.py --runs 10 --policies adaptive fixed_100 template
+.venv/bin/python scripts/compare_portfolio_search.py --seeds 0 1 2 3 4 5 6 7 8 9
 make check
 ```
 
-CSV сохраняется в `artifacts/submission.csv`, автономный агент — в `artifacts/delivery/`, сравнение политик — в `artifacts/benchmark.json`. Проверка OpenAI сохраняет предложения для replay в `artifacts/openai_hypotheses_replay.json`.
+CSV сохраняется в `artifacts/submission.csv`, автономный агент — в `artifacts/delivery/`, сравнение политик — в `artifacts/benchmark.json`. Два вызова `make_submission` выше запускают отдельные процессы с seed 42; `cmp` проверяет равенство файлов.
+
+`compare_portfolio_search.py` сравнивает исходный и уточнённый портфели на одних
+пилотах. Seed 0–9 — разработческая выборка, а не независимый закрытый тест;
+результат не подтверждает преимущество на новых данных.
+
+Для проверки автономного агента используйте отдельную копию полного participant kit
+и новое виртуальное окружение по `artifacts/delivery/README.md`. Установите только
+зависимости сборки и сравните полученный `submission.csv` с исходным. Manifest
+фиксирует SHA-256 модулей: после изменения движка сборку и проверки нужно повторить.
+
+Отдельная сетевая проверка `.venv/bin/python scripts/check_openai.py` проверяет доступ
+API-проекта к модели и сохраняет предложения для replay в
+`artifacts/openai_hypotheses_replay.json`.
 
 Прогноз движка и результат локальной симуляции — отдельные показатели. Нижний хвост прогноза учитывает неопределённость эффекта, но не весь риск выборки; доходность не гарантируется.
 

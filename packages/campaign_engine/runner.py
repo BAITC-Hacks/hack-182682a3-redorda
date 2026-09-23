@@ -179,12 +179,12 @@ def run_campaigns(env, config=None, *, history=None, observer=None, should_cance
         pilot_cost, pilot_contacts = 0.0, 0
         current = None
 
-        def build_current():
+        def build_current(*, improve=False):
             money, contacts, _ = _runner_resources(env)
             return builder.build(
                 candidates, beliefs, result.pilots, budget=limit_money - pilot_cost,
                 contacts=limit_contacts - pilot_contacts, official_budget=money,
-                official_contacts=contacts)
+                official_contacts=contacts, improve=improve, deadline=deadline - 1)
 
         for _ in range(40):  # deterministic bound, including failed attempts
             money, contacts, pilots_left = _runner_resources(env)
@@ -280,7 +280,12 @@ def run_campaigns(env, config=None, *, history=None, observer=None, should_cance
             return result
         if not result.pilots:
             raise ValueError("No successful pilot; mandatory condition not satisfied")
-        current = build_current()
+        current = build_current(improve=options.portfolio_search)
+        result.metadata["portfolio_search"] = current.search_metadata
+        if cancelled():
+            result.status, result.stop_reason = "cancelled", "cancel_requested"
+            emit("run_cancelled", pilots=len(result.pilots), reason=result.stop_reason)
+            return result
         money, contacts, _ = _runner_resources(env)
         final_usage = validate_portfolio(
             current.campaigns, index, tariff_codes, channels, budget=limit_money - pilot_cost,

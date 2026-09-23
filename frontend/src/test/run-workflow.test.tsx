@@ -208,6 +208,7 @@ describe('пользовательский сценарий', () => {
     // jsdom's Blob has no text() method; FileReader reads the downloaded payload.
     const downloaded = create.mock.calls[0][0];
     expect(downloaded.type).toBe('text/csv');
+    expect(downloaded.size).toBe(new TextEncoder().encode(csv).byteLength);
     const downloadedCsv = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result));

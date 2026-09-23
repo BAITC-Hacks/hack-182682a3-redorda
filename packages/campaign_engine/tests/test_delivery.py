@@ -81,6 +81,38 @@ def test_wrapper_imports_root_even_when_kit_contains_agent(public_tool_fixture):
     assert "1 campaigns, 1 successful pilots, 30 contacts" in completed.stdout
 
 
+@pytest.mark.parametrize("configured_path", [None, "", "relative", "absolute"])
+def test_cli_resolves_kit_from_repository_independently_of_cwd(
+    public_tool_fixture, tmp_path, configured_path,
+):
+    root, kit = public_tool_fixture
+    installed = root / "data/participant-kit"
+    installed.parent.mkdir()
+    kit.rename(installed)
+    write_source(root / "agent.py", VALID_ACT)
+    script = root / "scripts/run_official.py"
+    write_source(script, (ROOT / "scripts/run_official.py").read_text())
+    env = os.environ.copy()
+    for name in ("PARTICIPANT_KIT_DIR", "PYTHONPATH", "OPENAI_API_KEY"):
+        env.pop(name, None)
+    env["PYTHON_DOTENV_DISABLED"] = "1"
+    if configured_path is not None:
+        env["PARTICIPANT_KIT_DIR"] = {
+            "": "", "relative": "data/participant-kit", "absolute": str(installed),
+        }[configured_path]
+
+    completed = subprocess.run(
+        [sys.executable, str(script), "local_eval", "--runs", "1"],
+        cwd=tmp_path, env=env, text=True, capture_output=True, timeout=30,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert f"Agent entry point: {root / 'agent.py'}" in completed.stdout
+    assert "ROOT_AGENT_USED" in completed.stdout
+    assert "WRONG KIT AGENT" not in completed.stdout + completed.stderr
+    assert "1 campaigns, 1 successful pilots, 30 contacts" in completed.stdout
+
+
 @pytest.mark.parametrize(
     "body, message",
     [
