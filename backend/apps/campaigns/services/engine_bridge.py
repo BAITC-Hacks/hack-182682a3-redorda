@@ -6,8 +6,11 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from campaign_engine.agent import Agent
-from campaign_engine.contracts import CASE_LIMITS, CHANNEL_COSTS, Campaign
+from campaign_engine.candidates import load_history
+from campaign_engine.contracts import CASE_LIMITS, CHANNEL_COSTS, Campaign, RunConfig
+from campaign_engine.engine_types import EngineFailure
+from campaign_engine.runner import run_campaigns
+from campaign_engine.segments import SegmentIndex
 from django.conf import settings
 from django.db import transaction
 from django.utils.module_loading import import_string
@@ -43,7 +46,6 @@ class ObservedEnvironment:
         self._on_pilot = on_pilot
 
     def __getattr__(self, name):
-        self._before_step()
         return getattr(self._delegate, name)
 
     def run_pilot(self, **kwargs):
@@ -51,7 +53,6 @@ class ObservedEnvironment:
         self._before_pilot(kwargs)
         response = self._delegate.run_pilot(**kwargs)
         self._on_pilot(kwargs, response)
-        self._before_step()
         return response
 
 
@@ -70,12 +71,13 @@ def _public_environment(context):
 def run_engine(run, *, check_cancel, runner=None):
     """Run the actual agent, persisting each observed pilot and final result.
 
-    ``runner`` exists only for tests. Production always constructs Agent and a
-    configured adapter to the organizer's public environment.
+    ``runner`` is a legacy test seam. Production calls the same shared runner as
+    Agent.act, with this plan's configuration and the imported dataset history.
     """
     context = EngineContext(Path(run.dataset.source_dir), run.budget, run.max_contacts,
                             run.max_pilots, run.seed, run.strategy)
     environment = _public_environment(context) if runner is None else runner.environment(context)
+    index = SegmentIndex(environment.customer_profile) if runner is None else None
 
     def before_step():
         if check_cancel():
@@ -89,6 +91,14 @@ def run_engine(run, *, check_cancel, runner=None):
                 <= CASE_LIMITS["pilot_max_customers"]
                 or channel not in CHANNEL_COSTS):
             raise ValueError("Invalid pilot size or channel")
+        # The public environment caps a requested sample to eligible customers
+        # and available resources. Guard the actual charge, not the upper bound.
+        if index is not None:
+            count = min(count, len(index.positions_for(request)), environment.remaining_contacts)
+            if CHANNEL_COSTS[channel]:
+                count = min(count, int(environment.remaining_budget // CHANNEL_COSTS[channel]))
+            if count <= 0:
+                raise ValueError("Pilot audience is empty")
         pilots = list(Pilot.objects.filter(run=run))
         if len(pilots) >= min(run.max_pilots, CASE_LIMITS["pilots"]):
             raise ValueError("Pilot count would exceed limit")
@@ -118,17 +128,39 @@ def run_engine(run, *, check_cancel, runner=None):
             sequence = Pilot.objects.filter(run=run).count() + 1
             Pilot.objects.create(run=run, sequence=sequence, request=_json(request),
                                  response=_json(response), cost=cost, n_customers=n_customers)
-            RunEvent.objects.create(run=run, kind="pilot_completed",
-                                    payload={"sequence": sequence, "cost": str(cost),
-                                             "n_customers": n_customers,
-                                             "requested_customers": request.get("n_customers", 100),
-                                             "channel": request["channel"]})
+            if runner is not None:
+                RunEvent.objects.create(run=run, kind="pilot_completed",
+                                        payload={"sequence": sequence, "cost": str(cost),
+                                                 "n_customers": n_customers,
+                                                 "requested_customers": request.get(
+                                                     "n_customers", 100),
+                                                 "channel": request["channel"]})
+
+    def observe(event):
+        # Engine error strings can contain upstream exception details. Publish
+        # a stable reason; the task stores internal diagnostics separately.
+        payload = event["data"]
+        if event["type"] == "run_failed":
+            payload = {"reason": "execution_failed"}
+        RunEvent.objects.create(run=run, kind=event["type"], payload=_json(payload))
 
     before_step()
     observed = ObservedEnvironment(environment, before_step=before_step,
                                    before_pilot=before_pilot, on_pilot=on_pilot)
     try:
-        output = Agent().act(observed) if runner is None else runner.act(observed)
+        if runner is None:
+            config = RunConfig(budget=float(run.budget), max_contacts=run.max_contacts,
+                               max_pilots=run.max_pilots, seed=run.seed, strategy=run.strategy)
+            result = run_campaigns(observed, config, history=load_history(context.dataset_path),
+                                   observer=observe, should_cancel=check_cancel)
+            before_step()  # Preserve cancellation/timeouts even if the runner caught them.
+            if result.status == "cancelled":
+                raise ExecutionCancelled()
+            if result.status != "completed":
+                raise EngineFailure(result.stop_reason)
+            output = _saved_output(result)
+        else:
+            output = runner.act(observed)
     except NotImplementedError as exc:
         raise ExecutionUnavailable("Campaign engine is not implemented") from exc
     before_step()
@@ -165,3 +197,29 @@ def run_engine(run, *, check_cancel, runner=None):
         from .results import validate_results
 
         validate_results(run.pk)
+
+
+def _saved_output(result):
+    """Map the shared runner's forecast to the stable HTTP result contract."""
+    details = {item["campaign_name"]: item for item in result.estimates["campaigns"]}
+    campaigns = []
+    for campaign in result.campaigns:
+        detail = details[campaign["campaign_name"]]
+        campaigns.append({
+            "campaign": campaign,
+            "metrics": {"cost": str(Decimal(str(detail["cost"])).quantize(Decimal(".01"))),
+                        "n_contacts": detail["n_contacts"],
+                        "predicted_effect": str(detail["estimated_incremental_net"]),
+                        "forecast_source": result.estimates["source"]},
+            "explanation": (
+                "Кампания выбрана по прогнозу прироста выручки за вычетом расходов "
+                "с учётом пилотов, неопределённости эффекта и лимитов плана. "
+                "Прогноз не является результатом симуляции."
+            ),
+        })
+    return {"campaigns": campaigns, "summary": {
+        "predicted_effect": str(result.estimates["net_arpu_gain_mean"]),
+        "simulator_result": None,
+        "warnings": result.warnings + result.estimates.get("limitations", []),
+        "engine": result.to_dict(),
+    }}
