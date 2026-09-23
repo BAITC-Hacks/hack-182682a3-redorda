@@ -30,6 +30,9 @@ Frontend ещё должен подключить login/CSRF и новые API; 
 [Отчёт интеграции и проверки](docs/backend-integration.md).
 [Публичный сайт](https://hack.1ge.kz), [автодеплой на Mac mini](docs/deployment.md).
 
+Документация без входа: [Swagger](https://hack.1ge.kz/api/docs/) и
+[OpenAPI JSON](https://hack.1ge.kz/api/schema/?format=json).
+
 ## Локальный запуск
 
 Python 3.11+ и Node.js 20.19+ (рекомендуются Python 3.12 и Node.js 22).

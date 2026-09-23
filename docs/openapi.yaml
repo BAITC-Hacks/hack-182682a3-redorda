@@ -126,7 +126,7 @@ paths:
       tags:
       - schema
       security:
-      - cookieAuth: []
+      - {}
       responses:
         '200':
           content:

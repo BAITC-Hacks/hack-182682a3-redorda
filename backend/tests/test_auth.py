@@ -41,11 +41,22 @@ def sign_in(client, credentials):
 
 
 @pytest.mark.parametrize("url", ["/api/v1/meta/", "/api/v1/datasets/current/",
-                                  "/api/v1/runs/", "/api/schema/", "/api/docs/"])
+                                  "/api/v1/runs/"])
 def test_anonymous_cannot_read_workspace(url):
     response = APIClient().get(url)
     assert response.status_code == 403
     assert response.data["error"]["code"] == "not_authenticated"
+
+
+def test_swagger_and_schema_are_public_in_authenticated_workspace():
+    client = APIClient()
+    swagger = client.get("/api/docs/")
+    assert swagger.status_code == 200
+    assert b"SwaggerUIBundle" in swagger.content
+    schema = client.get("/api/schema/?format=json")
+    assert schema.status_code == 200
+    assert "/api/v1/runs/{id}/start/" in schema.json()["paths"]
+    assert client.get("/api/v1/runs/").status_code == 403
 
 
 def test_health_and_session_discovery_are_public():

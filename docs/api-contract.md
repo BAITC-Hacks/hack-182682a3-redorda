@@ -28,8 +28,8 @@ Frontend использует один origin, `credentials: 'include'` и сл�
 При 401/403 frontend останавливает polling и показывает вход; CSRF обновляется через
 `auth/csrf/`. Пароль и session cookie не сохраняются в localStorage.
 
-`health/`, `ready/` и auth discovery доступны без входа. `/api/schema/` и `/api/docs/`
-защищены теми же правилами, что данные. Контракт подготовлен для frontend; его
+`health/`, `ready/`, auth discovery, `/api/schema/` и `/api/docs/` доступны без входа.
+Данные и операции API требуют сессии в публичном режиме. Контракт подготовлен для frontend; его
 подключение и обновление TypeScript-типов остаются задачей frontend-разработчика.
 Файлы frontend при этой интеграции не изменялись.
 
