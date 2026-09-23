@@ -8,6 +8,7 @@ import CountUp from './components/react-bits/CountUp';
 import SpotlightCard from './components/react-bits/SpotlightCard';
 import RunDetail from './components/RunDetail';
 import AgentPets from './components/pets/AgentPets';
+import { RunProvider, useRun } from './state/RunContext';
 
 const number = (value: number | string) => new Intl.NumberFormat('ru-RU', {
   maximumFractionDigits: 0,
@@ -23,11 +24,14 @@ function ErrorMessage({ error }: { error: unknown }) {
 }
 
 function Overview({ dataset, meta, petHomeRef }: { dataset: DatasetType | null; meta: Meta; petHomeRef: (node: HTMLDivElement | null) => void }) {
+  const { selectedId, run } = useRun();
   return <>
     <div className="page-heading"><div><span className="eyebrow">ЦЕНТР УПРАВЛЕНИЯ КАМПАНИЯМИ</span>
       <h1>Каждое решение<br />должно окупаться<span className="yellow-dot">.</span></h1>
       <p>Изучайте аудиторию, проверяйте гипотезы и находите<br className="desktop" /> кампании с наибольшим эффектом.</p>
     </div><div className="hero-symbol" aria-hidden="true"><Signal size={88} strokeWidth={1.4} /></div></div>
+    <div className="office-run-heading">{selectedId ? <><div><strong>{run?.name || 'Выбранный план'}</strong><span>{run ? statusLabels[run.status] : 'Загружаем состояние…'}</span></div><NavLink to={`/runs/${selectedId}`}>Открыть рабочую панель<ArrowRight size={15} /></NavLink></>
+      : <><div><strong>Команда ждёт план</strong><span>Выберите сохранённый план или создайте новый.</span></div><div><NavLink to="/runs">Выбрать план</NavLink><NavLink to="/runs/new">Создать план</NavLink></div></>}</div>
     <div ref={petHomeRef} className="pet-office-home" />
     <div className="stats-grid">
       <Stat icon={<Users size={18} />} label="Абоненты в базе" value={dataset ? <CountUp to={dataset.customer_count} /> : '—'} note={dataset ? 'Пакет участника импортирован' : 'Ожидается импорт данных'} />
@@ -59,7 +63,7 @@ function DataPage({ dataset }: { dataset: DatasetType | null }) {
       <p>После импорта пакета Beeline здесь появятся состав аудитории и распределение сегментов.</p></div>
       : <><div className="stats-grid"><Stat icon={<Users size={18} />} label="Абоненты" value={<CountUp to={dataset.customer_count} />} note="Уникальные записи в наборе" />
         <Stat icon={<Layers size={18} />} label="Тарифы" value={<CountUp to={dataset.summary.tariff_count} />} note="Из справочника организаторов" />
-        <Stat icon={<ChartNoAxesCombined size={18} />} label="Базовая выручка" value={number(dataset.summary.baseline_arpu)} note="у. е. · прогноз без кампаний" /></div>
+        <Stat icon={<ChartNoAxesCombined size={18} />} label="Базовая выручка" value={dataset.summary.baseline_arpu === null ? '—' : number(dataset.summary.baseline_arpu)} note="у. е. · прогноз без кампаний" /></div>
         <div className="workflow-grid">{Object.entries(dataset.summary.segments).map(([key, counts]) => <article className="panel" key={key}>
           <h3>{{ arpu_segment: 'Расходы клиентов', data_segment: 'Интернет', call_segment: 'Звонки' }[key]}</h3>
           {Object.entries(counts).map(([label, count]) => <div className="segment" key={label}>
@@ -175,10 +179,11 @@ export default function App() {
   async function logout() {
     if (loggingOut) return;
     setLoggingOut(true); setError(null);
-    try { await api.logout(); setSession(null); setMeta(null); setDataset(null); setNeedsLogin(true); }
+    try { await api.logout(); try { localStorage.removeItem('redorda:selected-run'); } catch { /* Storage is optional. */ }
+      setSession(null); setMeta(null); setDataset(null); setNeedsLogin(true); }
     catch (e) { setError(e); } finally { setLoggingOut(false); }
   }
-  return <div className="app"><aside className="sidebar"><NavLink className="brand" to="/"><img className="brand-logo" src="/branding/janymda-logo.jpg" alt="" />Janymda</NavLink>
+  return <RunProvider key={session?.user?.id || 'anonymous'} active={!needsLogin && !!meta}><div className="app"><aside className="sidebar"><NavLink className="brand" to="/"><img className="brand-logo" src="/branding/janymda-logo.jpg" alt="" />Janymda</NavLink>
     <div className="workspace-label">BEELINE / HACKALEM AI</div><nav aria-label="Основная навигация">
       <NavLink to="/" end><ChartNoAxesCombined size={19} />Обзор</NavLink>
       <NavLink to="/runs"><FlaskConical size={19} />Планы кампаний</NavLink>
@@ -191,8 +196,8 @@ export default function App() {
         <Route path="/data" element={<DataPage dataset={dataset} />} />
         <Route path="/runs" element={<RunsPage />} />
         <Route path="/runs/new" element={<NewRun dataset={dataset} meta={meta} />} />
-        <Route path="/runs/:id" element={<RunDetail meta={meta} />} />
+        <Route path="/runs/:id" element={<RunDetail meta={meta} petHomeRef={setPetHome} />} />
         <Route path="*" element={<><h1>Страница не найдена</h1><NavLink to="/">На главную</NavLink></>} />
       </Routes>}</main><footer>RedOrda © 2026 <span>HackAlem AI · Beeline Tariff Marketing Campaigns</span></footer>
-    </div><AgentPets home={petHome} /></div>;
+    </div><AgentPets home={petHome} /></div></RunProvider>;
 }

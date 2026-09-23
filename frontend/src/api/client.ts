@@ -1,4 +1,4 @@
-import type { Dataset, Meta, Page, Run, RunEventsPage, RunInput, RunResult, Session } from './types';
+import type { CommandType, Dataset, Meta, Page, Run, RunEventsPage, RunInput, RunResult, Session, TeamCommand, TeamSnapshot } from './types';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public fields: Record<string, unknown> = {},
@@ -80,6 +80,12 @@ export const api = {
   events: (id: string, after: number, signal?: AbortSignal) => request<RunEventsPage>(
     `runs/${id}/events/?after=${after}&limit=100`, { signal }),
   results: (id: string, signal?: AbortSignal) => request<RunResult>(`runs/${id}/results/`, { signal }),
+  team: (id: string, signal?: AbortSignal) => request<TeamSnapshot>(`runs/${id}/team/`, { signal }),
+  command: (id: string, type: CommandType, snapshotId: string, parameters: Record<string, unknown>, key: string) =>
+    request<TeamCommand>(`runs/${id}/commands/`, { method: 'POST', headers: { 'Idempotency-Key': key },
+      body: JSON.stringify({ type, snapshot_id: snapshotId, parameters }) }),
+  commandResult: (id: string, commandId: string, signal?: AbortSignal) =>
+    request<TeamCommand>(`runs/${id}/commands/${commandId}/`, { signal }),
   async exportRun(id: string): Promise<Blob> {
     const path = `runs/${id}/export/`;
     const response = await fetch(`/api/v1/${path}`, {

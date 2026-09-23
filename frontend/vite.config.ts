@@ -7,8 +7,8 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/api': 'http://127.0.0.1:8000',
-      '/admin': 'http://127.0.0.1:8000',
+      '/api': process.env.VITE_API_PROXY || 'http://127.0.0.1:8000',
+      '/admin': process.env.VITE_API_PROXY || 'http://127.0.0.1:8000',
     },
   },
 });

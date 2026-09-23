@@ -13,7 +13,7 @@ export interface Dataset {
   customer_count: number;
   imported_at: string;
   summary: {
-    baseline_arpu: string;
+    baseline_arpu: string | null;
     tariff_count: number;
     synthetic: boolean;
     segments: Record<'arpu_segment' | 'data_segment' | 'call_segment', Record<string, number>>;
@@ -39,7 +39,7 @@ export interface Run {
   seed: number;
   strategy: 'baseline' | 'openai';
   created_at: string;
-  progress: RunProgress;
+  progress?: RunProgress;
   error: { code: string; message: string } | null;
   cancellation_requested: boolean;
 }
@@ -49,6 +49,24 @@ export interface RunEvent {
   kind: string;
   payload: Record<string, unknown>;
   created_at: string;
+}
+
+export type ActorId = 'lead' | 'analyst' | 'experiment' | 'finance' | 'control';
+export type CommandType = 'explain' | 'compare' | 'create_plan';
+export interface TeamTask {
+  id: string; actor_id: ActorId; status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  title: string; artifact_ids: string[]; evidence_ids: string[];
+}
+export interface TeamArtifact {
+  id: string; task_id: string; type: string; title: string; data: JsonValue; evidence_ids: string[];
+}
+export interface TeamSnapshot {
+  schema_version: 1; run_id: string; snapshot_id: string; last_event_id: number;
+  tasks: TeamTask[]; artifacts: TeamArtifact[]; available_commands: CommandType[];
+}
+export interface TeamCommand {
+  id: string; type: CommandType; status: 'queued' | 'running' | 'completed' | 'failed';
+  result: JsonValue; error: { code: string; message: string; fields?: Record<string, unknown> } | null;
 }
 
 export interface RunEventsPage {
