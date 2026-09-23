@@ -15,6 +15,15 @@ export function parseTeamRequest(input: string): RequestIntent | null {
   const compare = /^сравни(?:\s+бюджет\s+(\d+(?:[.,]\d{1,2})?))?$/i.exec(text);
   if (compare) return { type: 'compare', ...(compare[1] ? { budget: compare[1].replace(',', '.') } : {}) };
   const create = /^создай\s+план\s+(.+)$/i.exec(text);
-  if (create) return { type: 'create_plan', planName: create[1].trim() };
+  if (create) {
+    const name = create[1].trim();
+    const constrained = /^(?:(.*?)\s+)?с\s+бюджетом\s+(\d+(?:[.,]\d{1,2})?)$/i.exec(name);
+    if (constrained) {
+      const budget = constrained[2].replace(',', '.');
+      return { type: 'create_plan', planName: constrained[1]?.trim() || `План с бюджетом ${budget}`, budget };
+    }
+    if (/(?:^|\s)с\s+бюджетом(?:\s|$)/i.test(name)) return null;
+    return { type: 'create_plan', planName: name };
+  }
   return null;
 }

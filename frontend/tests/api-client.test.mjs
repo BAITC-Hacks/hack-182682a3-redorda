@@ -152,3 +152,14 @@ test('text requests prepare only known typed commands', async () => {
   assert.deepEqual(parseTeamRequest('создай план Новый бюджет'), { type: 'create_plan', planName: 'Новый бюджет' });
   assert.equal(parseTeamRequest('запусти пилот'), null);
 });
+
+test('create-plan text separates budget constraints from the plan name', async () => {
+  const { parseTeamRequest } = await loadSource('../src/api/team-requests.ts');
+  assert.deepEqual(parseTeamRequest('Создай план с бюджетом 80000'), {
+    type: 'create_plan', planName: 'План с бюджетом 80000', budget: '80000',
+  });
+  assert.deepEqual(parseTeamRequest('создай план Осенний с бюджетом 80000,50'), {
+    type: 'create_plan', planName: 'Осенний', budget: '80000.50',
+  });
+  assert.equal(parseTeamRequest('создай план с бюджетом много'), null);
+});
