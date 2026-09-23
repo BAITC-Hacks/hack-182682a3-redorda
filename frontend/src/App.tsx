@@ -4,6 +4,8 @@ import { ArrowRight, ChartNoAxesCombined, CircleDot, Database, FlaskConical, Lay
   Plus, RefreshCw, Signal, Wallet, Users, ChevronRight } from 'lucide-react';
 import { api, ApiError } from './api/client';
 import type { Dataset as DatasetType, Meta, Page, Run } from './api/types';
+import CountUp from './components/react-bits/CountUp';
+import SpotlightCard from './components/react-bits/SpotlightCard';
 
 const number = (value: number | string) => new Intl.NumberFormat('ru-RU', {
   maximumFractionDigits: 0,
@@ -25,9 +27,9 @@ function Overview({ dataset, meta }: { dataset: DatasetType | null; meta: Meta }
       <p>Изучайте аудиторию, проверяйте гипотезы и находите<br className="desktop" /> кампании с наибольшим эффектом.</p>
     </div><div className="hero-symbol" aria-hidden="true"><Signal size={88} strokeWidth={1.4} /></div></div>
     <div className="stats-grid">
-      <Stat icon={<Users size={18} />} label="Абоненты в базе" value={dataset ? number(dataset.customer_count) : '—'} note={dataset ? 'Пакет участника импортирован' : 'Ожидается импорт данных'} />
+      <Stat icon={<Users size={18} />} label="Абоненты в базе" value={dataset ? <CountUp to={dataset.customer_count} /> : '—'} note={dataset ? 'Пакет участника импортирован' : 'Ожидается импорт данных'} />
       <Stat icon={<Wallet size={18} />} label="Бюджет кампаний" value={number(meta.limits.budget)} note="у. е. · включая пилоты" />
-      <Stat icon={<FlaskConical size={18} />} label="Пилотные проверки" value={`до ${meta.limits.pilots}`} note="Проверяйте идеи на малой выборке" />
+      <Stat icon={<FlaskConical size={18} />} label="Пилотные проверки" value={<>до <CountUp to={meta.limits.pilots} /></>} note="Проверяйте идеи на малой выборке" />
     </div>
     <div className="section-heading"><h2>От данных к решению</h2><span className="subtle">Три шага к плану кампаний</span></div>
     <div className="workflow-grid">
@@ -35,16 +37,16 @@ function Overview({ dataset, meta }: { dataset: DatasetType | null; meta: Meta }
         ['01', 'Изучить аудиторию', 'Тарифы, потребление и выручка помогут найти первые гипотезы.', '/data', 'Открыть данные'],
         ['02', 'Подготовить эксперимент', 'Задайте бюджет и лимиты для проверки предложений.', '/runs/new', 'Создать план'],
         ['03', 'Сравнить результаты', 'Сохранённые планы и результаты расчётов в одном месте.', '/runs', 'К списку планов'],
-      ].map(([n, title, text, path, link]) => <article className="workflow-card" key={n}>
+      ].map(([n, title, text, path, link]) => <SpotlightCard className="workflow-card" key={n}>
         <span className="step-number">{n}</span><h3>{title}</h3><p>{text}</p>
         <NavLink to={path}>{link}<ArrowRight size={16} /></NavLink>
-      </article>)}
+      </SpotlightCard>)}
     </div>
     <div className="footnote"><CircleDot size={16} /> Данные хакатона синтетические. Все эксперименты проводятся в симуляторе.</div>
   </>;
 }
 
-function Stat({ icon, label, value, note }: { icon: React.ReactNode; label: string; value: string; note: string }) {
+function Stat({ icon, label, value, note }: { icon: React.ReactNode; label: string; value: React.ReactNode; note: string }) {
   return <article className="stat"><div className="stat-label">{label}{icon}</div><strong>{value}</strong><small>{note}</small></article>;
 }
 
@@ -52,8 +54,8 @@ function DataPage({ dataset }: { dataset: DatasetType | null }) {
   return <><div className="section-heading"><div><span className="eyebrow">АУДИТОРИЯ</span><h1>Данные для решений</h1></div></div>
     {!dataset ? <div className="empty"><Database size={36} /><h2>Набор данных ещё не загружен</h2>
       <p>После импорта пакета Beeline здесь появятся состав аудитории и распределение сегментов.</p></div>
-      : <><div className="stats-grid"><Stat icon={<Users size={18} />} label="Абоненты" value={number(dataset.customer_count)} note="Уникальные записи в наборе" />
-        <Stat icon={<Layers size={18} />} label="Тарифы" value={number(dataset.summary.tariff_count)} note="Из справочника организаторов" />
+      : <><div className="stats-grid"><Stat icon={<Users size={18} />} label="Абоненты" value={<CountUp to={dataset.customer_count} />} note="Уникальные записи в наборе" />
+        <Stat icon={<Layers size={18} />} label="Тарифы" value={<CountUp to={dataset.summary.tariff_count} />} note="Из справочника организаторов" />
         <Stat icon={<ChartNoAxesCombined size={18} />} label="Базовая выручка" value={number(dataset.summary.baseline_arpu)} note="у. е. · прогноз без кампаний" /></div>
         <div className="workflow-grid">{Object.entries(dataset.summary.segments).map(([key, counts]) => <article className="panel" key={key}>
           <h3>{{ arpu_segment: 'Расходы клиентов', data_segment: 'Интернет', call_segment: 'Звонки' }[key]}</h3>
