@@ -139,7 +139,7 @@ export default function App() {
     })]).then(([m, d]) => { if (active) { setMeta(m); setDataset(d); } }).catch(e => { if (active) setError(e); });
     return () => { active = false; };
   }, [retry]);
-  return <div className="app"><aside className="sidebar"><NavLink className="brand" to="/"><span className="brand-mark"><Signal size={24} /></span>redorda<span className="brand-dot">.</span></NavLink>
+  return <div className="app"><aside className="sidebar"><NavLink className="brand" to="/"><img className="brand-logo" src="/branding/janymda-logo.jpg" alt="" />Janymda</NavLink>
     <div className="workspace-label">BEELINE / HACKALEM AI</div><nav aria-label="Основная навигация">
       <NavLink to="/" end><ChartNoAxesCombined size={19} />Обзор</NavLink>
       <NavLink to="/runs"><FlaskConical size={19} />Планы кампаний</NavLink>

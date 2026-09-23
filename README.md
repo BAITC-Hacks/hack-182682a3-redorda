@@ -19,7 +19,9 @@
 Интегрированы четыре backend-ветки: проверка и импорт семи CSV, модели и миграции,
 Django sessions/CSRF, очередь Celery, идемпотентный старт, отмена, журнал событий,
 сохранённые результаты и CSV. PostgreSQL, Redis, Gunicorn, worker и frontend описаны
-в Compose с healthchecks; CI проверяет PostgreSQL, живую очередь и сборку Compose.
+в Compose с healthchecks. [Шаблон CI](infra/ci/github-actions.yaml) проверяет
+PostgreSQL, живую очередь и сборку Compose. Действующий workflow удалён параллельным
+коммитом main; его удаление сохранено. Автодеплой Mac mini продолжает запускать `make check`.
 
 **Блокеры:** `Agent.act` и адаптер публичной среды ещё не реализованы; запуск выключен
 (`engine_unavailable`). Полный успешный сценарий проверяется только тестовым runner.
