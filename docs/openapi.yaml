@@ -275,6 +275,94 @@ paths:
               schema:
                 $ref: '#/components/schemas/Dataset'
           description: ''
+  /api/v1/datasets/import/:
+    post:
+      operationId: v1_datasets_import_create
+      description: 'Import exactly dict_tariff.csv, traffic.csv, arpu_monthly.csv
+        and change_tariff.csv using the repeated multipart files field. Limits: 30
+        MiB per file and 50 MiB total. Existing identical bytes reactivate the dataset
+        and preserve its original source metadata.'
+      tags:
+      - v1
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DatasetUpload'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+  /api/v1/datasets/import-demo/:
+    post:
+      operationId: v1_datasets_import_demo_create
+      description: Import the four bundled demo CSVs. Send no body or an empty JSON
+        object.
+      tags:
+      - v1
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
   /api/v1/health/:
     get:
       operationId: v1_health_retrieve
@@ -642,7 +730,10 @@ components:
           maximum: 9223372036854775807
           minimum: 0
           format: int64
-        summary: {}
+        summary:
+          allOf:
+          - $ref: '#/components/schemas/DatasetSummary'
+          readOnly: true
         imported_at:
           type: string
           format: date-time
@@ -653,6 +744,51 @@ components:
       - id
       - imported_at
       - name
+      - summary
+    DatasetSummary:
+      type: object
+      properties:
+        baseline_arpu:
+          type: string
+          nullable: true
+        tariff_count:
+          type: integer
+        synthetic:
+          type: boolean
+          nullable: true
+        segments:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: integer
+        source_kind:
+          $ref: '#/components/schemas/SourceKindEnum'
+        file_rows:
+          type: object
+          additionalProperties:
+            type: integer
+        format:
+          $ref: '#/components/schemas/FormatEnum'
+        missing_current_tariff:
+          type: integer
+      required:
+      - baseline_arpu
+      - segments
+      - synthetic
+      - tariff_count
+    DatasetUpload:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            type: string
+            format: binary
+          maxItems: 4
+          minItems: 4
+      required:
+      - files
     Error:
       type: object
       properties:
@@ -674,6 +810,11 @@ components:
       - code
       - fields
       - message
+    FormatEnum:
+      enum:
+      - raw_csv
+      type: string
+      description: '* `raw_csv` - raw_csv'
     Health:
       type: object
       properties:
@@ -933,6 +1074,14 @@ components:
       required:
       - authenticated
       - user
+    SourceKindEnum:
+      enum:
+      - demo
+      - upload
+      type: string
+      description: |-
+        * `demo` - demo
+        * `upload` - upload
     StrategyEnum:
       enum:
       - baseline
