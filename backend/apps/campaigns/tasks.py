@@ -54,3 +54,17 @@ def expire_run(run_id, task_id):
     run = CampaignRun.objects.only("status", "started_at", "created_at").get(pk=run_id)
     if run.status in (CampaignRun.Status.QUEUED, CampaignRun.Status.RUNNING):
         finish_run(run_id, task_id, "failed", "timeout", "Calculation exceeded 600 seconds")
+
+
+@shared_task(max_retries=0, acks_late=False, soft_time_limit=570, time_limit=600)
+def execute_team_command(command_id):
+    from apps.campaigns.services.team_commands import execute_command
+
+    execute_command(command_id)
+
+
+@shared_task(max_retries=0)
+def expire_team_command(command_id):
+    from apps.campaigns.services.team_commands import expire_command
+
+    expire_command(command_id)
