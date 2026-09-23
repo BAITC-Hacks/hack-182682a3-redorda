@@ -275,3 +275,22 @@ def test_upload_schema_accepts_binary_files_and_nullable_raw_statistics(client):
     summary = schema["components"]["schemas"]["DatasetSummary"]
     assert summary["properties"]["baseline_arpu"]["nullable"] is True
     assert summary["properties"]["synthetic"]["nullable"] is True
+
+
+def test_full_kit_reimport_reactivates_it_after_raw_upload(client, raw_files, tmp_path):
+    from django.core.management import call_command
+
+    full = tmp_path / 'full-kit'
+    full.mkdir()
+    write_kit(full, [["1", "12.50", "tariff_1", "LOW", "LITE", "LOW"]])
+    call_command("import_participant_data", path=full)
+    complete = Dataset.objects.get()
+    uploaded = client.post(UPLOAD_URL, {"files": uploads(raw_files)}, format="multipart")
+    raw_run = client.post("/api/v1/runs/", {"name": "Raw"}, format="json")
+    assert raw_run.data["dataset_id"] == uploaded.data["id"]
+    call_command("import_participant_data", path=full)
+    assert client.get("/api/v1/datasets/current/").data["id"] == str(complete.id)
+    new_run = client.post("/api/v1/runs/", {"name": "Complete"}, format="json")
+    assert new_run.data["dataset_id"] == str(complete.id)
+    assert CampaignRun.objects.get(pk=raw_run.data["id"]).dataset_id != complete.id
+    assert complete.subscribers.count() == 1

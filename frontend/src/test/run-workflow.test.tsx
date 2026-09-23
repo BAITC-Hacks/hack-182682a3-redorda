@@ -210,3 +210,12 @@ describe('пользовательский сценарий', () => {
     expect(screen.queryByRole('button', { name: /Сохранить план/ })).not.toBeInTheDocument();
   });
 });
+
+it('explains an incomplete dataset and disables its calculation', async () => {
+  override = path => path === 'runs/plan-1/'
+    ? json({ ...draft, execution_blocker: 'Для расчёта нужен customer_profile.csv.' }) : undefined;
+  open();
+  expect(await screen.findByRole('button', { name: 'Запустить расчёт' })).toBeDisabled();
+  expect(screen.getByText('Для расчёта нужен customer_profile.csv.')).toBeVisible();
+  expect(calls.some(call => call.path.endsWith('/start/'))).toBe(false);
+});

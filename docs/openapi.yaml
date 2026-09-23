@@ -996,11 +996,16 @@ components:
         cancellation_requested:
           type: boolean
           readOnly: true
+        execution_blocker:
+          type: string
+          nullable: true
+          readOnly: true
       required:
       - cancellation_requested
       - created_at
       - dataset_id
       - error
+      - execution_blocker
       - id
       - name
       - progress

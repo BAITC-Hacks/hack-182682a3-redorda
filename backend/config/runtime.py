@@ -18,3 +18,13 @@ def environment_description():
             "это не результат судейства."
         )}
     return {"mode": "external", "label": "Внешняя среда расчёта"}
+
+
+def dataset_execution_blocker(dataset):
+    from apps.campaigns.services.public_environment import LOCAL_FACTORY
+
+    if (settings.REDORDA_ENVIRONMENT_FACTORY == LOCAL_FACTORY
+            and dataset.summary.get("format") == "raw_csv"):
+        return ("В этом наборе нет профиля абонентов (customer_profile.csv). "
+                "Для расчёта нужен полный пакет участников; четыре CSV доступны для просмотра.")
+    return None

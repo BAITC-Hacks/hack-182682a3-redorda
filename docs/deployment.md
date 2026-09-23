@@ -52,8 +52,8 @@ Actions подтверждает приём запроса; результат �
 Публичный proxy передаёт POST в Django. При `DJANGO_DEBUG=0` все данные и операции
 API требуют активной Django-сессии; health, ready и вход остаются публичными.
 Создайте пользователя через `.venv/bin/python backend/manage.py createsuperuser`
-с загруженным `.env.production`. До подключения формы входа frontend можно войти
-через `/admin/login/` на том же origin с учётной записью staff.
+с загруженным `.env.production`. Форма входа доступна на `/login`;
+`/admin/login/` остаётся доступным для учётных записей staff.
 
 Worker использует prefork/concurrency=1 для поддержки soft/hard timeout.
 Для macOS spawn-процессов добавлена и проверена инициализация Celery task tracer
@@ -61,6 +61,29 @@ Worker использует prefork/concurrency=1 для поддержки soft
 Очередь `redorda`, префикс Redis `redorda:`; для распределённого ограничения входа
 задайте `CACHE_URL=redis://127.0.0.1:6379/13`. Изменения `.env.production` в этом
 репозитории автоматически не применяются; настройте недостающие переменные на сервере.
-Сохраняйте `REDORDA_RUN_EXECUTION_ENABLED=0` до готовности Agent.act и factory.
+Для расчётов на официальном локальном симуляторе установите в `.env.production`:
+
+```dotenv
+PARTICIPANT_KIT_DIR=data/participant-kit
+REDORDA_RUN_EXECUTION_ENABLED=1
+REDORDA_ENVIRONMENT_FACTORY=apps.campaigns.services.public_environment.local_simulation
+```
+
+После установки проверенного пакета организаторов выполните
+`.venv/bin/python backend/manage.py import_participant_data --path data/participant-kit`
+с загруженной `.env.production`. Миграции создают таблицу профилей абонентов;
+повторный CLI-импорт заполняет её для существующего набора без потери старых запусков.
+Затем перезапустите API и worker штатным скриптом деплоя. Пустое старое значение
+factory и выключенный флаг не заменяются автоматически при `git pull`.
+
+Четыре CSV демоимпорта/загрузки содержат историю, но не готовый профиль целевой
+аудитории. Для таких наборов создание черновика и просмотр доступны, а запуск
+блокируется с объяснением отсутствия `customer_profile.csv`. Старые планы полного
+пакета сохраняют собственный набор и продолжают работать. Симулятор использует
+учебную модель организаторов; его прогноз не является результатом судейства.
+
+Импорт в браузере ожидает до пяти минут; Gunicorn и nginx дают 360 секунд,
+чтобы сервер не завершал допустимую загрузку раньше клиентского дедлайна.
+
 Readiness: `curl -fsS https://hack.1ge.kz/api/v1/ready/` проверяет БД и Redis;
 готовность worker отдельно проверяется командой `celery --workdir backend -A config inspect ping`.

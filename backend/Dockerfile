@@ -13,4 +13,4 @@ RUN python backend/manage.py collectstatic --noinput && \
     mkdir -p artifacts data/participant-kit backend/media && chown -R redorda:redorda /workspace
 USER redorda
 EXPOSE 8000
-CMD ["gunicorn", "--chdir", "backend", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeout", "60"]
+CMD ["gunicorn", "--chdir", "backend", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeout", "360"]

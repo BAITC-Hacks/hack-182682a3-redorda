@@ -86,3 +86,25 @@ describe('session API', () => {
     await expect(api.me()).rejects.toMatchObject({ status: 0, message: expect.stringContaining('Нет связи с сервером') });
   });
 });
+
+it('allows a demo import to finish after the normal request deadline', async () => {
+  vi.useFakeTimers();
+  let importSignal: AbortSignal | undefined;
+  let finish!: (response: Response) => void;
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(json({ csrf_token: 'import-token' }))
+    .mockImplementationOnce((_url: string, init: RequestInit) => {
+      importSignal = init.signal ?? undefined;
+      return new Promise<Response>(resolve => { finish = resolve; });
+    });
+  vi.stubGlobal('fetch', fetchMock);
+  const { api } = await import('./client');
+  const request = api.importDemo();
+  await vi.advanceTimersByTimeAsync(16000);
+  expect(importSignal?.aborted).toBe(false);
+  finish(json({ id: 'demo', name: 'Demo', customer_count: 1,
+    imported_at: '2026-09-23T10:00:00Z', summary: { tariff_count: 1,
+      baseline_arpu: null, synthetic: true,
+      segments: { arpu_segment: {}, data_segment: {}, call_segment: {} } } }));
+  await expect(request).resolves.toMatchObject({ id: 'demo' });
+});

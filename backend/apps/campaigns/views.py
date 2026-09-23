@@ -157,7 +157,7 @@ class RunViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrieve
         except execution.ExecutionConflict as exc:
             raise RunConflict() from exc
         except execution.EngineNotReady as exc:
-            raise EngineUnavailable() from exc
+            raise EngineUnavailable(detail=str(exc) or None) from exc
         except execution.ExecutionUnavailable as exc:
             raise ServiceUnavailable() from exc
         return Response(self.get_serializer(run).data, status=status.HTTP_202_ACCEPTED)

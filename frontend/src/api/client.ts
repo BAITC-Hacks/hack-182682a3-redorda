@@ -21,12 +21,12 @@ function responseError(status: number, payload: any) {
 let csrfToken: string | null = null;
 const unauthorizedListeners = new Set<() => void>();
 
-async function request<T>(path: string, init?: RequestInit, csv = false): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, csv = false, timeoutMs = 15000): Promise<T> {
   const controller = new AbortController();
   const abort = () => controller.abort();
   init?.signal?.addEventListener('abort', abort, { once: true });
   if (init?.signal?.aborted) controller.abort();
-  const timeout = window.setTimeout(abort, 15000);
+  const timeout = window.setTimeout(abort, timeoutMs);
   const headers = new Headers(init?.headers);
   // DRF negotiates JSON errors before the streaming CSV view executes.
   headers.set('Accept', csv ? 'text/csv, application/json' : 'application/json');
@@ -140,7 +140,7 @@ export const api = {
   },
   meta: () => request<Meta>('meta/'),
   dataset: () => request<Dataset>('datasets/current/'),
-  importDemo: (signal?: AbortSignal) => request<Dataset>('datasets/import-demo/', { method: 'POST', body: '{}', signal }).then(importedDataset),
+  importDemo: (signal?: AbortSignal) => request<Dataset>('datasets/import-demo/', { method: 'POST', body: '{}', signal }, false, 5 * 60 * 1000).then(importedDataset),
   importDataset,
   runs: (page = 1) => request<Page<ApiRun>>(`runs/?page=${page}`).then(page => ({ ...page, results: page.results.map(toRun) })),
   run: (id: string, signal?: AbortSignal) => request<ApiRun>(`runs/${id}/`, { signal }).then(toRun),

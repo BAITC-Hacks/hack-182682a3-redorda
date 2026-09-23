@@ -8,7 +8,7 @@ cd "$ROOT"
 case "${1:-}" in
   api)
     exec "$ROOT/.venv/bin/gunicorn" --chdir backend config.wsgi:application \
-      --bind 127.0.0.1:8013 --workers 2 --timeout 180 --access-logfile - --error-logfile - ;;
+      --bind 127.0.0.1:8013 --workers 2 --timeout 360 --access-logfile - --error-logfile - ;;
   worker)
     exec "$ROOT/.venv/bin/celery" --workdir backend -A config worker \
       --loglevel=info --pool=prefork --concurrency=1 ;;

@@ -2,6 +2,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils import timezone
 
 from apps.campaigns.models import Dataset, Subscriber
 from apps.campaigns.services.datasets import (
@@ -32,6 +33,9 @@ class Command(BaseCommand):
                 "summary": summary,
             })
             dataset = Dataset.objects.select_for_update().get(pk=dataset.pk)
+            if not created:
+                dataset.imported_at = timezone.now()
+                dataset.save(update_fields=["imported_at"])
             if not dataset.subscribers.exists():
                 Subscriber.objects.bulk_create((
                     Subscriber(dataset=dataset, id_number=row["ID_NUMBER"].strip(), profile=row)

@@ -39,6 +39,7 @@ export interface Run {
   progress?: RunProgress | null;
   error?: { code: string; message: string } | null;
   cancellation_requested?: boolean;
+  execution_blocker?: string | null;
 }
 
 export interface ApiRun extends Omit<Run, 'progress'> { progress: ApiRunProgress }

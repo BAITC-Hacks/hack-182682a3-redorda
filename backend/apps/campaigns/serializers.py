@@ -1,5 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
+from config.runtime import dataset_execution_blocker
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -76,6 +77,7 @@ class RunFailureSerializer(serializers.Serializer):
 
 
 class RunSerializer(serializers.ModelSerializer):
+    execution_blocker = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
     error = serializers.SerializerMethodField()
     cancellation_requested = serializers.BooleanField(source="cancel_requested", read_only=True)
@@ -91,9 +93,13 @@ class RunSerializer(serializers.ModelSerializer):
         model = CampaignRun
         fields = ["id", "name", "dataset_id", "status", "budget", "max_contacts", "max_pilots",
                   "seed", "strategy", "created_at", "progress", "error",
-                  "cancellation_requested"]
+                  "cancellation_requested", "execution_blocker"]
         read_only_fields = ["id", "dataset_id", "status", "created_at", "progress", "error",
-                            "cancellation_requested"]
+                            "cancellation_requested", "execution_blocker"]
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_execution_blocker(self, run):
+        return dataset_execution_blocker(run.dataset)
 
     @extend_schema_field(RunProgressSerializer)
     def get_progress(self, run):
