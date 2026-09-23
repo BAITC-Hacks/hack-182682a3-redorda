@@ -15,13 +15,13 @@ function Desk({ index, label }: { index: number; label: string }) {
   </div>;
 }
 
-export default function PetOffice({ children, paused, reducedMotion, title, onPause, onRelease }: {
-  children: ReactNode; paused: boolean; reducedMotion: boolean; title: string;
+export default function PetOffice({ children, paused, reducedMotion, title, planName, onPause, onRelease }: {
+  children: ReactNode; paused: boolean; reducedMotion: boolean; title: string; planName: string | null;
   onPause: () => void; onRelease: () => void;
 }) {
   return <section className={`pet-office${paused || reducedMotion ? ' is-paused' : ''}`} aria-label="Мини-офис Janymda">
-    <div className="pet-office-header"><div><span className="pet-office-logo">J<span> / </span>team</span><span className="pet-office-subtitle">Маленькая команда. Большие планы.</span></div>
-      <div className="pet-office-actions"><button type="button" disabled={reducedMotion} onClick={onPause} aria-label={paused ? 'Продолжить сценку в офисе' : 'Приостановить сценку в офисе'}>{paused || reducedMotion ? <Play size={14} /> : <Pause size={14} />}</button>
+    <div className="pet-office-header"><div><span className="pet-office-logo">J<span> / </span>team</span><span className="pet-office-subtitle">{planName ? `План: ${planName}` : 'Выберите или создайте план'}</span></div>
+      <div className="pet-office-actions"><button type="button" disabled={reducedMotion} onClick={onPause} aria-label={paused ? 'Продолжить движение в офисе' : 'Приостановить движение в офисе'}>{paused || reducedMotion ? <Play size={14} /> : <Pause size={14} />}</button>
         <button type="button" onClick={onRelease}>Выпустить на экран<ArrowUpRight size={14} /></button></div>
     </div>
     <div className="pet-office-floor">
@@ -33,6 +33,6 @@ export default function PetOffice({ children, paused, reducedMotion, title, onPa
       </div>
       {children}
     </div>
-    <div className="pet-office-footer"><span><i />{paused || reducedMotion ? 'Команда отдыхает' : title}</span><small>Нажми на персонажа — поздоровайся</small></div>
+    <div className="pet-office-footer"><span><i />{title}</span><small>Нажмите на персонажа — откроется рабочая панель</small></div>
   </section>;
 }
