@@ -4,11 +4,11 @@ Frontend обращается к `/api/v1/` на том же домене. Кл�
 в `.env.production` для Mac mini или в `.env` для Compose. Его используют API и
 Celery worker; frontend ключ не получает. Модель остаётся `gpt-6-sol`.
 
-## Mac mini: hack.1ge.kz
+## Mac mini: production
 
 Сервисы launchd: `com.oa.redorda.api` (Gunicorn, loopback 8013),
 `com.oa.redorda.web` (Node proxy, loopback 8103), `com.oa.redorda.worker` (Celery).
-Cloudflare Tunnel направляет `hack.1ge.kz` на `http://127.0.0.1:8103`.
+Cloudflare Tunnel направляет настроенный production-домен на `http://127.0.0.1:8103`.
 PostgreSQL использует отдельную роль и базу `redorda`; Redis — базу 13.
 
 Заполните серверный `.env.production` по образцу
@@ -60,7 +60,7 @@ bash scripts/deploy-production-macos.sh
 ```bash
 launchctl kickstart -k "gui/$(id -u)/com.oa.redorda.api"
 launchctl kickstart -k "gui/$(id -u)/com.oa.redorda.worker"
-curl -fsS https://hack.1ge.kz/api/v1/ready/
+curl -fsS http://127.0.0.1:8103/api/v1/ready/
 ```
 
 При `DJANGO_DEBUG=0` работа с данными требует Django-сессии. Создать пользователя

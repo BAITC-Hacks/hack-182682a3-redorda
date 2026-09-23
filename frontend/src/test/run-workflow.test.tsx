@@ -205,16 +205,11 @@ describe('пользовательский сценарий', () => {
     await waitFor(() => expect(click).toHaveBeenCalledOnce());
     const exportCall = calls.find(call => call.path.endsWith('/export/'));
     expect(new Headers(exportCall?.init?.headers).get('Accept')).toBe('text/csv, application/json');
-    // jsdom's Blob has no text() method; FileReader reads the downloaded payload.
+    // The mocked Fetch Response produces a Node Blob, so read it with Blob.text().
     const downloaded = create.mock.calls[0][0];
     expect(downloaded.type).toBe('text/csv');
     expect(downloaded.size).toBe(new TextEncoder().encode(csv).byteLength);
-    const downloadedCsv = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(reader.error);
-      reader.readAsText(downloaded);
-    });
+    const downloadedCsv = await downloaded.text();
     expect(downloadedCsv).toBe(csv);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument(); click.mockRestore();
   });
