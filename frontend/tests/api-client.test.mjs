@@ -143,3 +143,11 @@ test('team commands use the saved snapshot, CSRF, and idempotency key', async t 
     parameters: { constraints: { budget: '50000' } } });
   assert.ok(calls.every(call => call.credentials === 'include'));
 });
+
+test('text requests prepare only known typed commands', async () => {
+  const { parseTeamRequest } = await loadSource('../src/api/team-requests.ts');
+  assert.deepEqual(parseTeamRequest('объясни campaign-7'), { type: 'explain', campaignId: 'campaign-7' });
+  assert.deepEqual(parseTeamRequest('сравни бюджет 50000,50'), { type: 'compare', budget: '50000.50' });
+  assert.deepEqual(parseTeamRequest('создай план Новый бюджет'), { type: 'create_plan', planName: 'Новый бюджет' });
+  assert.equal(parseTeamRequest('запусти пилот'), null);
+});

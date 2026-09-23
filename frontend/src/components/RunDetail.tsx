@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, useParams } from 'react-router-dom';
 import { Download, Play, RefreshCw, Square } from 'lucide-react';
 import { useRun } from '../state/RunContext';
+import { parseTeamRequest } from '../api/team-requests';
 import type { ActorId, CommandType, JsonValue, Meta, Run, RunEvent, RunResult, TeamArtifact, TeamTask } from '../api/types';
 import './RunDetail.css';
 
@@ -107,6 +108,7 @@ function TeamView({ petHomeRef }: { petHomeRef?: (node: HTMLDivElement | null) =
   const [allowedChannels, setAllowedChannels] = useState<string[]>([]);
   const [commandType, setCommandType] = useState<CommandType>('explain');
   const [formError, setFormError] = useState('');
+  const [requestText, setRequestText] = useState('');
   const tasks = team?.tasks || [];
   const artifacts = team?.artifacts || [];
   const activeTask = tasks.find(task => task.id === selectedTask) || null;
@@ -116,6 +118,16 @@ function TeamView({ petHomeRef }: { petHomeRef?: (node: HTMLDivElement | null) =
   const available = team?.available_commands || [];
   const constraints = () => ({ ...(budget.trim() ? { budget: budget.trim() } : {}),
     ...(allowedChannels.length ? { allowed_channels: allowedChannels } : {}) });
+  function interpretRequest() {
+    setFormError('');
+    const intent = parseTeamRequest(requestText);
+    if (!intent) { setFormError('Напишите: «объясни ID», «сравни бюджет 50000» или «создай план Название».'); return; }
+    if (!available.includes(intent.type)) { setFormError('Эта команда сейчас недоступна по состоянию сервера.'); return; }
+    setCommandType(intent.type);
+    if (intent.campaignId) setCampaignId(intent.campaignId);
+    if (intent.budget) setBudget(intent.budget);
+    if (intent.planName) setPlanName(intent.planName);
+  }
   async function submit() {
     setFormError('');
     if (!available.includes(commandType)) return;
@@ -158,6 +170,10 @@ function TeamView({ petHomeRef }: { petHomeRef?: (node: HTMLDivElement | null) =
       </div>
       <div className="panel command-panel"><h3>Обратиться к команде</h3>
         <p className="subtle">Команды используют сохранённые данные этого плана. Доступность определяет сервер.</p>
+        <label>Напишите команде<input value={requestText} onChange={event => setRequestText(event.target.value)}
+          placeholder="Например, сравни бюджет 50000" disabled={available.length === 0} /></label>
+        <button className="button" type="button" onClick={interpretRequest} disabled={available.length === 0}>Подготовить команду</button>
+        <p className="subtle">Текст заполнит поля ниже. Отправка произойдёт только после нажатия «Отправить команду».</p>
         <div className="command-tabs" role="group" aria-label="Команда">
           {(['explain', 'compare', 'create_plan'] as CommandType[]).map(type => <button type="button" key={type} className={`button ${commandType === type ? 'primary' : ''}`} disabled={!available.includes(type)} onClick={() => setCommandType(type)}>{type === 'explain' ? 'Объяснить' : type === 'compare' ? 'Сравнить' : 'Создать план'}</button>)}
         </div>
