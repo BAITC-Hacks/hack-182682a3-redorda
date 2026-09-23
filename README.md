@@ -57,6 +57,11 @@ make migrate
 - Документация API: http://localhost:8000/api/docs/
 - Проверки: `make check`; обновление OpenAPI: `make schema`.
 
+Проверки импорта отдельно: `.venv/bin/python -m pytest -q backend/tests/test_dataset_upload.py`.
+Они покрывают демонабор, multipart-загрузку, лимиты, ошибки CSV, сохранение файлов,
+повторный выбор набора, доступ с CSRF и схему API. `make check` также проверяет
+совместимость с прежним семифайловым CLI-импортом и собирает frontend.
+
 Без Make: `python3 -m venv .venv`, `.venv/bin/python -m pip install -r requirements.txt`, `npm --prefix frontend ci`, `.venv/bin/python backend/manage.py migrate`. На Windows используйте `.venv\Scripts\python.exe` вместо `.venv/bin/python`.
 
 ## Данные Beeline
