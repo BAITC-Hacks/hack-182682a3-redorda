@@ -235,3 +235,54 @@ def test_expired_deadline_does_not_run_paid_actions(run_options):
     result = run_campaigns(env, options=options)
     assert result.status == "failed"
     assert env.requests == []
+
+
+def test_real_steps_publish_team_evidence_and_ordered_handoffs(run_options):
+    env = ControlledEnvironment()
+    saved = {}
+    roles = set()
+    starts = set()
+
+    def observe(event):
+        kind, payload = event['type'], event['data']
+        if not kind.startswith('task_'):
+            return
+        roles.add(payload['actor_id'])
+        assert set(payload['evidence_ids']) <= saved.keys()
+        if kind == 'task_started':
+            starts.add(payload['task_id'])
+        if kind == 'task_completed':
+            assert payload['task_id'] in starts
+            for artifact in payload.get('artifacts', []):
+                assert set(artifact['evidence_ids']) <= saved.keys()
+                assert artifact['id'] not in saved
+                saved[artifact['id']] = artifact
+                if artifact['type'] == 'pilot_observation':
+                    assert env.pilot_history, 'No success before the real pilot returns'
+                    assert artifact['data']['observation'] == env.pilot_history[-1]
+        if kind == 'task_handoff':
+            assert payload['from_actor'] == payload['actor_id']
+            assert payload['to_task_id'] != payload['task_id']
+            assert payload['evidence_ids']
+
+    result = run_campaigns(env, RunConfig(max_pilots=2), options=run_options, observer=observe)
+    assert result.status == 'completed', result.stop_reason
+    assert roles == {'lead', 'analyst', 'experiment', 'finance', 'control'}
+    assert sum(a['type'] == 'pilot_observation' for a in saved.values()) == len(env.requests)
+    assert any(e['type'] == 'task_handoff' for e in result.events)
+    assert any(a['type'] == 'portfolio' and a['data']['campaigns'] == result.campaigns
+               for a in saved.values())
+
+
+def test_failed_step_emits_failure_without_completed_pilot(run_options):
+    env = ControlledEnvironment()
+    def broken(**request):
+        raise RuntimeError('private failure detail')
+    env.run_pilot = broken
+    result = run_campaigns(env, options=run_options)
+    failed = [e for e in result.events if e['type'] == 'task_failed']
+    assert failed
+    assert all(e['data']['reason'] for e in failed)
+    assert not any(a['type'] == 'pilot_observation' for e in result.events
+                   for a in e['data'].get('artifacts', []))
+    assert 'private failure detail' not in json.dumps(result.to_dict())

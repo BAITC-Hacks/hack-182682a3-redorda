@@ -65,6 +65,20 @@ def test_official_dataset_import_to_real_runner_and_export(settings, monkeypatch
     assert result["totals"]["predicted_effect"] is not None
     assert result["totals"]["simulator_result"] is None
     assert run.pilots.count() == 1
+    team = client.get(url + 'team/').json()
+    assert {task['actor_id'] for task in team['tasks']} == {
+        'lead', 'analyst', 'experiment', 'finance', 'control'}
+    assert all(task['status'] == 'completed' for task in team['tasks'])
+    saved_ids = {artifact['id'] for artifact in team['artifacts']}
+    assert saved_ids
+    for task in team['tasks']:
+        assert task['artifact_ids']
+        assert set(task['artifact_ids'] + task['evidence_ids']) <= saved_ids
+    assert run.events.filter(kind='task_handoff').exists()
+    restored = client.get(url + 'team/').json()
+    assert restored['tasks'] == team['tasks']
+    assert restored['artifacts'] == team['artifacts']
+    assert restored['last_event_id'] == team['last_event_id']
     export = client.get(url + "export/", HTTP_ACCEPT="text/csv, application/json")
     assert export.status_code == 200
     assert b"tariff_" in b"".join(export.streaming_content)

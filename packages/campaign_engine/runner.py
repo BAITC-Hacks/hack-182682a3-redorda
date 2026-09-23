@@ -17,6 +17,7 @@ from campaign_engine.openai_gateway import (
 from campaign_engine.pilots import choose_pilot
 from campaign_engine.portfolio import PortfolioBuilder, validate_portfolio
 from campaign_engine.segments import SegmentIndex
+from campaign_engine.team_events import TeamJournal
 
 
 def public_planning_summary(index, tariffs, candidates) -> dict:
@@ -88,12 +89,14 @@ def run_campaigns(env, config=None, *, history=None, observer=None, should_cance
     def cancelled():
         return should_cancel is not None and bool(should_cancel())
 
+    team = TeamJournal(emit)
     try:
         emit("run_started", config=config.model_dump(), policy=options.policy)
         if cancelled():
             result.status, result.stop_reason = "cancelled", "cancel_requested"
             emit("run_cancelled", reason=result.stop_reason)
             return result
+        team.begin('prepare', 'lead', 'Проверка ресурсов и ограничений запуска')
         if env.pilot_history:
             raise ValueError("A fresh environment is required; automatic resume is unsupported")
         initial_money, initial_contacts, initial_pilots = _runner_resources(env)
@@ -106,6 +109,9 @@ def run_campaigns(env, config=None, *, history=None, observer=None, should_cance
         if limit_contacts < 2 or limit_pilots < 1:
             raise ValueError("Resources cannot support a pilot and a final campaign")
 
+        team.complete('validation', {'config': config.model_dump(), 'budget': limit_money,
+                                    'contacts': limit_contacts, 'pilots': limit_pilots})
+        team.begin('hypotheses', 'analyst', 'Анализ аудитории и подготовка гипотез')
         index = SegmentIndex(env.customer_profile)
         tariff_codes = set(str(t) for t in env.tariffs["tariff_plan_code"])
         if any(cell[0] not in tariff_codes for cell in index.cells):
@@ -167,6 +173,9 @@ def run_campaigns(env, config=None, *, history=None, observer=None, should_cance
                 emit("fallback_used", reason="hypothesis_provider_unavailable")
 
         beliefs = initialize_beliefs(candidates)
+        team.complete('hypotheses', {'candidates': [asdict(c) for c in candidates],
+                                    'source': result.metadata['hypothesis_source'],
+                                    'excluded_customers': index.excluded_count})
         builder = PortfolioBuilder(index, channels, options, config.seed)
         # At full environment reach, a final campaign can be capped to the last
         # contact. A stricter web limit cannot invent that CSV cap.
@@ -186,7 +195,7 @@ def run_campaigns(env, config=None, *, history=None, observer=None, should_cance
                 contacts=limit_contacts - pilot_contacts, official_budget=money,
                 official_contacts=contacts, improve=improve, deadline=deadline - 1)
 
-        for _ in range(40):  # deterministic bound, including failed attempts
+        for attempt in range(40):  # deterministic bound, including failed attempts
             money, contacts, pilots_left = _runner_resources(env)
             if cancelled():
                 result.status, result.stop_reason = "cancelled", "cancel_requested"
@@ -229,6 +238,8 @@ def run_campaigns(env, config=None, *, history=None, observer=None, should_cance
             if time.monotonic() >= deadline - 1:
                 result.stop_reason = "time_limit"
                 break
+            team.begin(f'pilot:{attempt + 1}', 'experiment',
+                       f'Пилот {len(result.pilots) + 1}: {arm.target_tariff}')
             try:
                 observation = env.run_pilot(**request)
             except Exception:
@@ -237,6 +248,7 @@ def run_campaigns(env, config=None, *, history=None, observer=None, should_cance
                 emit("pilot_failed", request=request, resources_changed=after != before,
                      history_changed=history_changed,
                      resources_before=before, resources_after=after)
+                team.fail('Пилот не завершён; подтверждённого результата нет.')
                 if after != before or history_changed:
                     result.metadata["unreconciled_pilot_request"] = request.copy()
                     raise ValueError(
@@ -271,21 +283,36 @@ def run_campaigns(env, config=None, *, history=None, observer=None, should_cance
                                      "n_pilots": len(result.pilots)}
             emit("pilot_completed", request=request, observation=clean_observation,
                  posterior=posterior.summary())
+            team.complete('pilot_observation', {'sequence': len(result.pilots),
+                          'request': request, 'observation': clean_observation,
+                          'posterior': posterior.summary()})
+            team.begin(f'portfolio:{attempt + 1}', 'finance',
+                       'Оценка портфеля с учётом расходов пилотов')
             current = build_current()
             emit("portfolio_updated", campaigns=current.campaigns,
                  forecast_net=current.mean_net, forecast_source="public_pilot_posterior",
                  final_cost=current.cost, final_contacts=current.contacts)
+            team.complete('portfolio', {'campaigns': current.campaigns,
+                          'forecast_net': current.mean_net, 'final_cost': current.cost,
+                          'final_contacts': current.contacts, 'pilot_cost': pilot_cost,
+                          'pilot_contacts': pilot_contacts, 'simulator_result': None})
 
         if result.status == "cancelled":
             return result
         if not result.pilots:
             raise ValueError("No successful pilot; mandatory condition not satisfied")
+        team.begin('final_portfolio', 'finance', 'Уточнение итогового портфеля')
         current = build_current(improve=options.portfolio_search)
         result.metadata["portfolio_search"] = current.search_metadata
         if cancelled():
             result.status, result.stop_reason = "cancelled", "cancel_requested"
             emit("run_cancelled", pilots=len(result.pilots), reason=result.stop_reason)
             return result
+        team.complete('portfolio', {'campaigns': current.campaigns,
+                      'forecast_net': current.mean_net, 'final_cost': current.cost,
+                      'final_contacts': current.contacts, 'pilot_cost': pilot_cost,
+                      'pilot_contacts': pilot_contacts, 'simulator_result': None})
+        team.begin('validate', 'control', 'Проверка итоговых кампаний и лимитов')
         money, contacts, _ = _runner_resources(env)
         final_usage = validate_portfolio(
             current.campaigns, index, tariff_codes, channels, budget=limit_money - pilot_cost,
@@ -306,6 +333,9 @@ def run_campaigns(env, config=None, *, history=None, observer=None, should_cance
         }
         result.stop_reason = result.stop_reason or "iteration_limit"
         result.status = "completed"
+        team.complete('validation', {'resource_usage': result.resource_usage,
+                                    'campaign_count': len(result.campaigns),
+                                    'limits_satisfied': True})
         emit("run_completed", resource_usage=result.resource_usage, reason=result.stop_reason)
     except ObserverFailure:
         result.status, result.stop_reason = "failed", "observer_failed_do_not_retry"
@@ -314,6 +344,7 @@ def run_campaigns(env, config=None, *, history=None, observer=None, should_cance
         result.status = "failed"
         result.stop_reason = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
         try:
+            team.fail('Шаг расчёта завершился с ошибкой; результат не подтверждён.')
             emit("run_failed", reason=result.stop_reason)
         except ObserverFailure:
             result.warnings.append("Event persistence also failed")
