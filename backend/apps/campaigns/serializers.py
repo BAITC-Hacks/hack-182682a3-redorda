@@ -1,5 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
@@ -24,7 +25,38 @@ class MetaSerializer(serializers.Serializer):
     environment = serializers.DictField(child=serializers.CharField())
 
 
+class DatasetSummarySerializer(serializers.Serializer):
+    baseline_arpu = serializers.CharField(allow_null=True)
+    tariff_count = serializers.IntegerField()
+    synthetic = serializers.BooleanField(allow_null=True)
+    segments = serializers.DictField(child=serializers.DictField(child=serializers.IntegerField()))
+    source_kind = serializers.ChoiceField(choices=["demo", "upload"], required=False)
+    file_rows = serializers.DictField(child=serializers.IntegerField(), required=False)
+    format = serializers.ChoiceField(choices=["raw_csv"], required=False)
+    missing_current_tariff = serializers.IntegerField(required=False)
+
+
+@extend_schema_field(OpenApiTypes.BINARY)
+class DatasetCSVFileField(serializers.FileField):
+    pass
+
+
+class DatasetUploadSerializer(serializers.Serializer):
+    files = serializers.ListField(child=DatasetCSVFileField(), min_length=4, max_length=4)
+
+    def to_internal_value(self, data):
+        if set(data) - {"files"}:
+            raise serializers.ValidationError({"non_field_errors": ["Неизвестные поля запроса."]})
+        return super().to_internal_value(data)
+
+
 class DatasetSerializer(serializers.ModelSerializer):
+    summary = serializers.SerializerMethodField()
+
+    @extend_schema_field(DatasetSummarySerializer)
+    def get_summary(self, obj):
+        return obj.summary
+
     class Meta:
         model = Dataset
         fields = ["id", "name", "checksum", "customer_count", "summary", "imported_at"]

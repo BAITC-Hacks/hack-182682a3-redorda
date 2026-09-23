@@ -63,10 +63,28 @@ make migrate
 - Документация API: http://localhost:8000/api/docs/
 - Проверки: `make check`; обновление OpenAPI: `make schema`.
 
+Проверки импорта отдельно: `.venv/bin/python -m pytest -q backend/tests/test_dataset_upload.py`.
+Они покрывают демонабор, multipart-загрузку, лимиты, ошибки CSV, сохранение файлов,
+повторный выбор набора, доступ с CSRF и схему API. `make check` также проверяет
+совместимость с прежним семифайловым CLI-импортом и собирает frontend.
+
 Без Make: `python3 -m venv .venv`, `.venv/bin/python -m pip install -r requirements.txt`, `npm --prefix frontend ci`, `.venv/bin/python backend/manage.py migrate`. На Windows используйте `.venv\Scripts\python.exe` вместо `.venv/bin/python`.
 
 ## Данные Beeline
 
+Откройте **Аудитория** и выберите **Импортировать демоданные**: четыре исходных
+CSV уже включены в `data/demo/`, скачивать пакет для этого сценария не нужно.
+Для своих данных выберите или перетащите `dict_tariff.csv`, `traffic.csv`,
+`arpu_monthly.csv` и `change_tariff.csv` в том же формате. Можно добавлять файлы
+по одному. Лимит — 30 МиБ на файл и 50 МиБ на набор. Интерфейс показывает передачу,
+проверку на сервере и анимацию взлёта после успешного импорта; сводка обновляется сразу.
+
+Четыре CSV дают фактическое число абонентов, тарифов и строк. Прогноз ARPU и готовые
+сегменты доступны только в полном пакете. Пользовательские загрузки хранятся в
+`backend/media/` (в Docker — общий том `dataset_media`) и не входят в Git.
+Ошибки не меняют текущие данные, а повторный импорт не создаёт дубликат.
+
+Для полного пакета с готовым профилем и словарём признаков сохранён CLI-импорт.
 Скачайте [выданный ZIP](https://drive.google.com/file/d/1cQUKtE_cm9TVXgzpcFwQYYUpmuFaJHHT/view), затем:
 
 ```bash
@@ -86,7 +104,7 @@ docker compose up --build -d
 docker compose exec backend python backend/manage.py import_participant_data --path data/participant-kit
 ```
 
-Перед импортом распакуйте ZIP предыдущей командой. Compose поднимает frontend, backend, PostgreSQL, Redis и worker; отдельный сервис
+Для CLI-импорта распакуйте ZIP предыдущей командой; демоимпорт из интерфейса работает без ZIP. Compose поднимает frontend, backend, PostgreSQL, Redis и worker; отдельный сервис
 `migrate` завершается до старта API. Интерфейс доступен на `localhost:5173`.
 Пользователь: `docker compose exec backend python backend/manage.py createsuperuser`.
 Для публичного размещения нужны HTTPS, собственный `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=0`,

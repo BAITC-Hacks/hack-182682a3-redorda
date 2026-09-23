@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowRight, ChartNoAxesCombined, CircleDot, Database, FlaskConical, Layers,
+import { ArrowRight, ChartNoAxesCombined, CircleDot, Database, FlaskConical,
   Plus, RefreshCw, Signal, Wallet, Users, ChevronRight } from 'lucide-react';
 import { api, ApiError } from './api/client';
 import type { Dataset as DatasetType, Meta, Page, Run, Session } from './api/types';
@@ -9,6 +9,8 @@ import SpotlightCard from './components/react-bits/SpotlightCard';
 import RunDetail from './runs/RunDetail';
 import { statusLabels } from './runs/presentation';
 import LoginPage from './components/LoginPage';
+import DataPage from './components/DataPage';
+import AgentPets from './components/pets/AgentPets';
 
 const number = (value: number | string) => new Intl.NumberFormat('ru-RU', {
   maximumFractionDigits: 0,
@@ -19,14 +21,15 @@ function ErrorMessage({ error }: { error: unknown }) {
     ? error.message : 'Не удалось получить данные.'}</div>;
 }
 
-function Overview({ dataset, meta }: { dataset: DatasetType | null; meta: Meta }) {
+function Overview({ dataset, meta, petHomeRef }: { dataset: DatasetType | null; meta: Meta; petHomeRef: (node: HTMLDivElement | null) => void }) {
   return <>
     <div className="page-heading"><div><span className="eyebrow">ЦЕНТР УПРАВЛЕНИЯ КАМПАНИЯМИ</span>
       <h1>Каждое решение<br />должно окупаться<span className="yellow-dot">.</span></h1>
       <p>Изучайте аудиторию, проверяйте гипотезы и находите<br className="desktop" /> кампании с наибольшим эффектом.</p>
     </div><div className="hero-symbol" aria-hidden="true"><Signal size={88} strokeWidth={1.4} /></div></div>
+    <div ref={petHomeRef} className="pet-office-home" />
     <div className="stats-grid">
-      <Stat icon={<Users size={18} />} label="Абоненты в базе" value={dataset ? <CountUp to={dataset.customer_count} /> : '—'} note={dataset ? 'Пакет участника импортирован' : 'Ожидается импорт данных'} />
+      <Stat icon={<Users size={18} />} label="Абоненты в базе" value={dataset ? <CountUp to={dataset.customer_count} /> : '—'} note={dataset ? 'Набор данных импортирован' : 'Ожидается импорт данных'} />
       <Stat icon={<Wallet size={18} />} label="Бюджет кампаний" value={number(meta.limits.budget)} note="у. е. · включая пилоты" />
       <Stat icon={<FlaskConical size={18} />} label="Пилотные проверки" value={<>до <CountUp to={meta.limits.pilots} /></>} note="Проверяйте идеи на малой выборке" />
     </div>
@@ -41,29 +44,12 @@ function Overview({ dataset, meta }: { dataset: DatasetType | null; meta: Meta }
         <NavLink to={path}>{link}<ArrowRight size={16} /></NavLink>
       </SpotlightCard>)}
     </div>
-    <div className="footnote"><CircleDot size={16} /> Данные хакатона синтетические. Все эксперименты проводятся в симуляторе.</div>
+    <div className="footnote"><CircleDot size={16} /> {dataset?.summary.synthetic === true ? 'Текущий набор содержит синтетические данные. ' : ''}Все эксперименты проводятся в симуляторе.</div>
   </>;
 }
 
 function Stat({ icon, label, value, note }: { icon: React.ReactNode; label: string; value: React.ReactNode; note: string }) {
   return <article className="stat"><div className="stat-label">{label}{icon}</div><strong>{value}</strong><small>{note}</small></article>;
-}
-
-function DataPage({ dataset }: { dataset: DatasetType | null }) {
-  return <><div className="section-heading"><div><span className="eyebrow">АУДИТОРИЯ</span><h1>Данные для решений</h1></div></div>
-    {!dataset ? <div className="empty"><Database size={36} /><h2>Набор данных ещё не загружен</h2>
-      <p>После импорта пакета Beeline здесь появятся состав аудитории и распределение сегментов.</p></div>
-      : <><div className="stats-grid"><Stat icon={<Users size={18} />} label="Абоненты" value={<CountUp to={dataset.customer_count} />} note="Уникальные записи в наборе" />
-        <Stat icon={<Layers size={18} />} label="Тарифы" value={<CountUp to={dataset.summary.tariff_count} />} note="Из справочника организаторов" />
-        <Stat icon={<ChartNoAxesCombined size={18} />} label="Базовая выручка" value={number(dataset.summary.baseline_arpu)} note="у. е. · прогноз без кампаний" /></div>
-        <div className="workflow-grid">{Object.entries(dataset.summary.segments).map(([key, counts]) => <article className="panel" key={key}>
-          <h3>{{ arpu_segment: 'Расходы клиентов', data_segment: 'Интернет', call_segment: 'Звонки' }[key]}</h3>
-          {Object.entries(counts).map(([label, count]) => <div className="segment" key={label}>
-            <div><span>{label}</span><strong>{number(count)}</strong></div>
-            <div className="bar"><span style={{ width: `${count / dataset.customer_count * 100}%` }} /></div>
-          </div>)}
-        </article>)}</div><p className="subtle">Импортирован {new Date(dataset.imported_at).toLocaleString('ru-RU')} · {dataset.name}</p></>}
-  </>;
 }
 
 function RunsPage() {
@@ -118,6 +104,7 @@ function NewRun({ dataset, meta }: { dataset: DatasetType | null; meta: Meta }) 
 function Dashboard({ session, onLogout, logoutBusy, logoutError }: {
   session: Session; onLogout: () => void; logoutBusy: boolean; logoutError: unknown;
 }) {
+  const [petHome, setPetHome] = useState<HTMLDivElement | null>(null);
   const [dataset, setDataset] = useState<DatasetType | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -137,14 +124,14 @@ function Dashboard({ session, onLogout, logoutBusy, logoutError }: {
     </nav><div className="sidebar-bottom"><span className="team-avatar">{session.user?.username.slice(0, 1).toUpperCase()}</span><div><strong>{session.user?.username}</strong><small>Рабочее пространство</small></div></div></aside>
     <div className="main-shell"><header><span>Маркетинговая аналитика</span><div className="header-actions"><div className="connection"><i className={meta ? 'connected' : ''} />{meta ? 'Сервис доступен' : error ? 'Нет соединения' : 'Подключение…'}</div><span className="header-user">{session.user?.username}</span><button className="logout-button" onClick={onLogout} disabled={logoutBusy}>{logoutBusy ? 'Выходим…' : 'Выйти'}</button></div></header>
       <main>{logoutError !== null && <ErrorMessage error={logoutError} />}{error ? <><ErrorMessage error={error} /><button className="button" onClick={() => setRetry(n => n + 1)}><RefreshCw size={16} />Повторить</button></> : !meta ? <p role="status">Подключаемся к сервису…</p> : <Routes>
-        <Route path="/" element={<Overview dataset={dataset} meta={meta} />} />
-        <Route path="/data" element={<DataPage dataset={dataset} />} />
+        <Route path="/" element={<Overview dataset={dataset} meta={meta} petHomeRef={setPetHome} />} />
+        <Route path="/data" element={<DataPage dataset={dataset} onImported={setDataset} />} />
         <Route path="/runs" element={<RunsPage />} />
         <Route path="/runs/new" element={<NewRun dataset={dataset} meta={meta} />} />
         <Route path="/runs/:id" element={<RunDetail meta={meta} />} />
         <Route path="*" element={<><h1>Страница не найдена</h1><NavLink to="/">На главную</NavLink></>} />
       </Routes>}</main><footer>RedOrda © 2026 <span>HackAlem AI · Beeline Tariff Marketing Campaigns</span></footer>
-    </div></div>;
+    </div><AgentPets home={petHome} /></div>;
 }
 
 export default function App() {
