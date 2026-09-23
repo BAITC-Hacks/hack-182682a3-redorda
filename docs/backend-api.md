@@ -124,15 +124,16 @@ fallback. CSV и `results/` читают сохранённые записи, н
 
 ```json
 {"schema_version":1,"run_id":"00000000-0000-0000-0000-000000000001",
- "snapshot_id":"snapshot-1","last_event_id":7,"tasks":[],"artifacts":[],
- "available_commands":["explain","compare","create_plan"]}
+ "snapshot_id":"00000000-0000-0000-0000-000000000002","last_event_id":7,
+ "tasks":[],"artifacts":[],"available_commands":["create_plan"]}
 ```
 
 Задачи содержат `id`, `actor_id`, `status`, `title`, `artifact_ids`,
 `evidence_ids`. Артефакты содержат `id`, `task_id`, `type`, `title`, `data`,
 `evidence_ids`. Состав зависит от сохранённого запуска; пустые списки означают
 отсутствие подтверждённой работы, а не выполненный расчёт. `available_commands`
-формирует сервис по текущему состоянию. Поля внутреннего состояния движка, секреты,
+формирует сервис по текущему состоянию и наличию функций движка. Сейчас
+`explain`/`compare` ещё не подключены и в списке не появляются. Поля внутреннего состояния движка, секреты,
 пути и traceback не выдаются. Неизвестный измеренный результат остаётся `null`.
 
 `POST runs/{id}/commands/` требует сессию, CSRF и `Idempotency-Key` длиной
@@ -142,32 +143,36 @@ fallback. CSV и `results/` читают сохранённые записи, н
 Idempotency-Key: explain-campaign-1
 X-CSRFToken: <токен сессии>
 
-{"type":"explain","snapshot_id":"snapshot-1",
+{"type":"explain","snapshot_id":"00000000-0000-0000-0000-000000000002",
  "parameters":{"campaign_id":"campaign-1"}}
 ```
 
 Другие допустимые параметры:
 
 ```json
-{"type":"compare","snapshot_id":"snapshot-1",
+{"type":"compare","snapshot_id":"00000000-0000-0000-0000-000000000002",
  "parameters":{"constraints":{"budget":"50000.00","allowed_channels":["sms"]}}}
 ```
 
 ```json
-{"type":"create_plan","snapshot_id":"snapshot-1",
- "parameters":{"name":"Вариант SMS","constraints":{"budget":"50000.00"}}}
+{"type":"create_plan","snapshot_id":"00000000-0000-0000-0000-000000000002",
+ "parameters":{"name":"Меньший бюджет","constraints":{"budget":"50000.00"}}}
 ```
 
 `budget` — decimal-строка от `0.01` до `100000.00`; каналы: `push`, `sms`,
 `digital_ads`, `call`. В `constraints` нужен хотя бы один параметр. Неизвестные
 поля на любом уровне, пустые значения и неверные типы дают 400.
+`snapshot_id` и ID команды — UUID. Для `create_plan` ограничение каналов пока
+не поддерживается движком: команда завершится `failed/capability_unavailable`,
+новый план не создаётся. Примеры `explain`/`compare` описывают контракт подключения
+AI; до реализации функций они также завершаются `failed/capability_unavailable`.
 
 Первый ответ — 202, повтор того же запроса с тем же ключом возвращает тот же
 объект; другой запрос с этим ключом — 409. `GET
 runs/{id}/commands/{command_id}/` возвращает его текущее состояние:
 
 ```json
-{"id":"command-1","type":"explain","status":"queued",
+{"id":"00000000-0000-0000-0000-000000000003","type":"explain","status":"queued",
  "result":null,"error":null}
 ```
 
@@ -178,11 +183,12 @@ runs/{id}/commands/{command_id}/` возвращает его текущее с�
 Неподдерживаемые команды `pause`, `resume`, ручной пилот отклоняются с 400.
 
 Ошибки: отсутствие ключа — 400 `validation_error` с
-`fields.Idempotency-Key`; чужой run/команда — 404 `not_found`; конфликт snapshot
-или ключа — 409 `team_conflict`; недоступный сервис — 503 `team_unavailable`.
-Пример: `{"error":{"code":"team_conflict","message":"Команда недоступна для выбранного snapshot или ключа.","fields":{}}}`.
-Пока сервисы `team_state`/`team_commands` не подключены, маршруты не могут
-возвращать реальные задачи или исполнять команды и отвечают 503.
+`fields.Idempotency-Key`; отсутствующий или чужой snapshot/команда — 404 `not_found`;
+повтор ключа с другим телом — 409 `command_conflict`; недоступный сервис —
+503 `team_unavailable`. При отказе Redis команда сохраняется с
+`failed/queue_unavailable`, при превышении времени — `failed/timeout`.
+Поздний ответ worker не перезаписывает терминальное состояние и не публикует артефакт.
+Команды работают через интегрированные сервисы `team_state`/`team_commands`.
 
 ## Ошибки
 

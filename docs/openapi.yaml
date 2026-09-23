@@ -461,6 +461,10 @@ paths:
   /api/v1/runs/{id}/commands/:
     post:
       operationId: v1_runs_commands_create
+      description: Команда по сохранённому snapshot. create_plan создаёт черновик
+        с новым бюджетом; explain/compare требуют функций AI-движка. Доступность —
+        в team.available_commands. allowed_channels пока не поддерживается движком.
+        После 202 опрашивайте GET команды.
       parameters:
       - in: header
         name: Idempotency-Key
@@ -481,6 +485,31 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/TeamCommandRequest'
+            examples:
+              НовыйПлан:
+                value:
+                  type: create_plan
+                  snapshot_id: 00000000-0000-0000-0000-000000000002
+                  parameters:
+                    name: Меньший бюджет
+                    constraints:
+                      budget: '50000.00'
+                summary: Новый план
+              Объяснение(послеПодключенияAI):
+                value:
+                  type: explain
+                  snapshot_id: 00000000-0000-0000-0000-000000000002
+                  parameters:
+                    campaign_id: '1'
+                summary: Объяснение (после подключения AI)
+              Сравнение(послеПодключенияAI):
+                value:
+                  type: compare
+                  snapshot_id: 00000000-0000-0000-0000-000000000002
+                  parameters:
+                    constraints:
+                      budget: '50000.00'
+                summary: Сравнение (после подключения AI)
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/TeamCommandRequest'
@@ -546,6 +575,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TeamCommandResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
           description: ''
         '404':
           content:
@@ -1312,7 +1347,9 @@ components:
         evidence_ids:
           type: array
           items:
-            type: string
+            oneOf:
+            - type: string
+            - type: integer
       required:
       - data
       - evidence_ids
@@ -1327,6 +1364,7 @@ components:
           $ref: '#/components/schemas/TypeEnum'
         snapshot_id:
           type: string
+          format: uuid
         parameters:
           type: object
           additionalProperties: {}
@@ -1339,6 +1377,7 @@ components:
       properties:
         id:
           type: string
+          format: uuid
         type:
           type: string
         status:
@@ -1375,6 +1414,7 @@ components:
           format: uuid
         snapshot_id:
           type: string
+          format: uuid
         last_event_id:
           type: integer
           minimum: 0
@@ -1416,7 +1456,9 @@ components:
         evidence_ids:
           type: array
           items:
-            type: string
+            oneOf:
+            - type: string
+            - type: integer
       required:
       - actor_id
       - artifact_ids

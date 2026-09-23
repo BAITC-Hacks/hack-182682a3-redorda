@@ -2,8 +2,10 @@ from decimal import Decimal
 from importlib import import_module
 from uuid import UUID
 
+from django.core.exceptions import ObjectDoesNotExist
+from django.http import Http404
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import OpenApiParameter, extend_schema
+from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema
 from rest_framework import serializers, status
 from rest_framework.exceptions import APIException, NotFound
 from rest_framework.response import Response
@@ -75,7 +77,7 @@ def _call(function, **kwargs):
         return function(**kwargs)
     except APIException:
         raise
-    except LookupError as exc:
+    except (Http404, ObjectDoesNotExist, LookupError) as exc:
         raise NotFound("Команда или snapshot не найден.") from exc
     except ValueError as exc:
         raise TeamConflict() from exc
@@ -119,6 +121,25 @@ class TeamView(APIView):
 class CommandListView(APIView):
     @extend_schema(
         request=TeamCommandRequestSerializer,
+        description=(
+            "Команда по сохранённому snapshot. create_plan создаёт черновик с новым бюджетом; "
+            "explain/compare требуют функций AI-движка. Доступность — в team.available_commands. "
+            "allowed_channels пока не поддерживается движком. После 202 опрашивайте GET команды."
+        ),
+        examples=[
+            OpenApiExample("Новый план", request_only=True, value={
+                "type": "create_plan", "snapshot_id": "00000000-0000-0000-0000-000000000002",
+                "parameters": {"name": "Меньший бюджет", "constraints": {"budget": "50000.00"}},
+            }),
+            OpenApiExample("Объяснение (после подключения AI)", request_only=True, value={
+                "type": "explain", "snapshot_id": "00000000-0000-0000-0000-000000000002",
+                "parameters": {"campaign_id": "1"},
+            }),
+            OpenApiExample("Сравнение (после подключения AI)", request_only=True, value={
+                "type": "compare", "snapshot_id": "00000000-0000-0000-0000-000000000002",
+                "parameters": {"constraints": {"budget": "50000.00"}},
+            }),
+        ],
         parameters=[
             OpenApiParameter(
                 "Idempotency-Key",
@@ -147,14 +168,15 @@ class CommandListView(APIView):
         body = TeamCommandRequestSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         data = body.validated_data
+        snapshot_id = str(data["snapshot_id"])
         state = _service("team_state")
-        _call(state.load_snapshot, run_id=run.id, snapshot_id=data["snapshot_id"])
+        _call(state.load_snapshot, run_id=run.id, snapshot_id=snapshot_id)
         parameters = _public(data["parameters"])
         payload = _call(
             _service("team_commands").submit_command,
             run_id=run.id,
             command_type=data["type"],
-            snapshot_id=data["snapshot_id"],
+            snapshot_id=snapshot_id,
             parameters=parameters,
             idempotency_key=key,
         )
@@ -167,11 +189,16 @@ class CommandListView(APIView):
 
 class CommandDetailView(APIView):
     @extend_schema(
-        responses={200: TeamCommandResponseSerializer, 404: ErrorSerializer, 503: ErrorSerializer},
+        responses={200: TeamCommandResponseSerializer, 400: ErrorSerializer,
+                   404: ErrorSerializer, 503: ErrorSerializer},
         tags=["team"],
     )
     def get(self, request, id, command_id):
         run = _run(id)
+        try:
+            command_id = str(serializers.UUIDField().run_validation(command_id))
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError({"command_id": exc.detail}) from exc
         payload = _call(_service("team_commands").get_command, run_id=run.id, command_id=command_id)
         if not isinstance(payload, dict):
             raise TeamServiceUnavailable()

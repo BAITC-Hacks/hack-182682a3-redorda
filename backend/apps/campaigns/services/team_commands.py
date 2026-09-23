@@ -1,10 +1,13 @@
 """Durable, idempotent commands against immutable team snapshots."""
 
+import hashlib
 import json
 import logging
 from decimal import Decimal, InvalidOperation
+from uuid import UUID
 
-from campaign_engine.contracts import CHANNEL_COSTS
+from campaign_engine.contracts import CHANNEL_COSTS, RunConfig
+from celery.exceptions import SoftTimeLimitExceeded
 from django.db import transaction
 from django.http import Http404
 from rest_framework.exceptions import APIException, ValidationError
@@ -70,7 +73,7 @@ def _constraints(value):
                 or len(channels) != len(set(channels))):
             raise ValidationError({"constraints": {"allowed_channels": [
                 "Укажите непустой список уникальных допустимых каналов."]}})
-        result["allowed_channels"] = channels
+        result["allowed_channels"] = sorted(channels)
     return result
 
 
@@ -88,14 +91,25 @@ def _parameters(command_type, parameters):
         campaign_id = parameters.get("campaign_id")
         if not isinstance(campaign_id, str) or not campaign_id.strip():
             raise ValidationError({"campaign_id": ["Укажите ID кампании."]})
-        return parameters
+        return {"campaign_id": campaign_id.strip()}
     result = {"constraints": _constraints(parameters.get("constraints"))}
     if command_type == "create_plan":
         name = parameters.get("name")
         if not isinstance(name, str) or not name.strip() or len(name) > 120:
             raise ValidationError({"name": ["Укажите название длиной до 120 символов."]})
         result["name"] = name.strip()
-    return parameters
+    return result
+
+
+def _request_hash(command_type, snapshot_id, parameters):
+    value = {"type": command_type, "snapshot_id": str(snapshot_id), "parameters": parameters}
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=False).encode()).hexdigest()
+
+
+def _ensure_supported_constraints(constraints):
+    if "allowed_channels" in constraints and "allowed_channels" not in RunConfig.model_fields:
+        raise team_ai.CapabilityUnavailable("The engine does not support channel restrictions")
 
 
 def submit_command(*, run_id, command_type, snapshot_id, parameters, idempotency_key) -> dict:
@@ -105,6 +119,10 @@ def submit_command(*, run_id, command_type, snapshot_id, parameters, idempotency
         raise ValidationError({"Idempotency-Key": ["Укажите ключ длиной 1–255 символов."]})
     if not isinstance(snapshot_id, str) or not snapshot_id:
         raise ValidationError({"snapshot_id": ["Укажите ID снимка."]})
+    try:
+        snapshot_id = str(UUID(snapshot_id))
+    except (ValueError, TypeError) as exc:
+        raise ValidationError({"snapshot_id": ["Укажите UUID снимка."]}) from exc
     key = idempotency_key.strip()
     validated = _parameters(command_type, parameters)
     model = _command_model()
@@ -124,6 +142,7 @@ def submit_command(*, run_id, command_type, snapshot_id, parameters, idempotency
             raise ValidationError({"snapshot_id": ["Неподдерживаемая версия снимка."]})
         payload = {"run": run, "snapshot_id": snapshot.pk, type_field: command_type,
                    "parameters": validated, "idempotency_key": key,
+                   "request_hash": _request_hash(command_type, snapshot_id, validated),
                    "status": "queued", "result": None, "error": None}
         command = model.objects.create(**payload)
         transaction.on_commit(lambda: _publish(command.pk))
@@ -152,25 +171,46 @@ def _publish(command_id):
 
 def _claim(command_id):
     model = _command_model()
+    run_id = model.objects.values_list("run_id", flat=True).get(pk=command_id)
     with transaction.atomic():
+        CampaignRun.objects.select_for_update().get(pk=run_id)
         command = model.objects.select_for_update().get(pk=command_id)
         if command.status != "queued":
             return None
         command.status = "running"
-        command.save(update_fields=["status"])
+        command.save(update_fields=["status", "updated_at"])
+        _task_event(command, "task_started")
         return command
+
+
+def _task_event(command, kind, *, artifact=None):
+    from apps.campaigns.services import team_state
+
+    command_type = getattr(command, _type_field(type(command)))
+    actor, title = {
+        "explain": ("analyst", "Объяснение выбранной кампании"),
+        "compare": ("finance", "Сравнение ограничений по сохранённым данным"),
+        "create_plan": ("lead", "Создание изменённого плана"),
+    }[command_type]
+    payload = {"task_id": f"command:{command.pk}", "actor_id": actor, "title": title,
+               "artifact_ids": [artifact["id"]] if artifact else [],
+               "evidence_ids": artifact["evidence_ids"] if artifact else []}
+    return team_state.persist_team_event(run_id=command.run_id, kind=kind, payload=payload)
 
 
 def _finish(command_id, *, result=None, error=None):
     model = _command_model()
+    run_id = model.objects.values_list("run_id", flat=True).get(pk=command_id)
     with transaction.atomic():
+        CampaignRun.objects.select_for_update().get(pk=run_id)
         command = model.objects.select_for_update().get(pk=command_id)
         if command.status in {"completed", "failed"}:
             return command
         command.status = "failed" if error else "completed"
         command.result = result
         command.error = error
-        command.save(update_fields=["status", "result", "error"])
+        command.save(update_fields=["status", "result", "error", "updated_at"])
+        _task_event(command, "task_failed" if error else "task_completed")
         return command
 
 
@@ -181,10 +221,23 @@ def _artifact_result(command, kind, data):
         raise TypeError("AI returned an invalid artifact")
     if not isinstance(data.get("evidence_ids"), list):
         raise TypeError("AI artifact has no evidence list")
-    saved = team_state.publish_artifact(run_id=command.run_id, artifact=data)
-    if not isinstance(saved, dict) or not saved.get("id"):
-        raise TypeError("Artifact could not be saved")
-    return saved
+    with transaction.atomic():
+        CampaignRun.objects.select_for_update().get(pk=command.run_id)
+        locked = _command_model().objects.select_for_update().get(pk=command.pk)
+        if locked.status != "running":
+            return None
+        # The backend owns command task/result identity; AI owns the evidence and contents.
+        artifact = {**data, "id": f"command-result:{command.pk}",
+                    "task_id": f"command:{command.pk}"}
+        saved = team_state.publish_artifact(run_id=command.run_id, artifact=artifact)
+        if not isinstance(saved, dict) or not saved.get("id"):
+            raise TypeError("Artifact could not be saved")
+        locked.status = "completed"
+        locked.result = saved
+        locked.error = None
+        locked.save(update_fields=["status", "result", "error", "updated_at"])
+        _task_event(locked, "task_completed", artifact=saved)
+        return saved
 
 
 def _create_plan(command):
@@ -193,6 +246,7 @@ def _create_plan(command):
     if not {"parent_run", "constraints"} <= field_names:
         raise team_ai.CapabilityUnavailable("Linked plan storage is unavailable")
     constraints = {**(source.constraints or {}), **command.parameters["constraints"]}
+    _ensure_supported_constraints(constraints)
     values = {name: getattr(source, name) for name in
               ("dataset", "budget", "max_contacts", "max_pilots", "seed", "strategy")}
     values.update(name=command.parameters["name"], parent_run=source,
@@ -200,13 +254,15 @@ def _create_plan(command):
     if "budget" in constraints:
         values["budget"] = Decimal(constraints["budget"])
     with transaction.atomic():
+        CampaignRun.objects.select_for_update().get(pk=command.run_id)
         locked = _command_model().objects.select_for_update().get(pk=command.pk)
         if locked.status != "running":
             return None
         plan = CampaignRun.objects.create(**values)
         locked.status = "completed"
         locked.result = {"run_id": str(plan.pk)}
-        locked.save(update_fields=["status", "result"])
+        locked.save(update_fields=["status", "result", "updated_at"])
+        _task_event(locked, "task_completed")
         return locked.result
 
 
@@ -233,6 +289,8 @@ def execute_command(command_id):
                 result = _artifact_result(command, "comparison", artifact)
             else:
                 raise ValueError("Unsupported command type")
+    except (TimeoutError, SoftTimeLimitExceeded):
+        _finish(command_id, error=_error("timeout", "Команда превысила время выполнения."))
     except team_ai.CapabilityUnavailable:
         _finish(command_id, error=_error("capability_unavailable", "AI-функция пока недоступна."))
     except ValueError:

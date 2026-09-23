@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from campaign_engine.contracts import CHANNEL_COSTS
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 
@@ -67,7 +68,7 @@ PARAMETERS_BY_TYPE = {
 
 class TeamCommandRequestSerializer(StrictSerializer):
     type = serializers.ChoiceField(choices=list(PARAMETERS_BY_TYPE))
-    snapshot_id = serializers.CharField(allow_blank=False, trim_whitespace=True)
+    snapshot_id = serializers.UUIDField()
     parameters = serializers.DictField()
 
     def validate_parameters(self, value):
@@ -77,6 +78,11 @@ class TeamCommandRequestSerializer(StrictSerializer):
         nested = PARAMETERS_BY_TYPE[kind](data=value)
         nested.is_valid(raise_exception=True)
         return nested.validated_data
+
+
+@extend_schema_field({"oneOf": [{"type": "string"}, {"type": "integer"}]})
+class EvidenceIdField(serializers.JSONField):
+    """Artifact IDs are strings; persisted event IDs can be integers."""
 
 
 class TeamTaskSerializer(serializers.Serializer):
@@ -89,7 +95,7 @@ class TeamTaskSerializer(serializers.Serializer):
     )
     title = serializers.CharField()
     artifact_ids = serializers.ListField(child=serializers.CharField())
-    evidence_ids = serializers.ListField(child=serializers.CharField())
+    evidence_ids = serializers.ListField(child=EvidenceIdField())
 
 
 class TeamArtifactSerializer(serializers.Serializer):
@@ -98,13 +104,13 @@ class TeamArtifactSerializer(serializers.Serializer):
     type = serializers.CharField()
     title = serializers.CharField()
     data = serializers.JSONField()
-    evidence_ids = serializers.ListField(child=serializers.CharField())
+    evidence_ids = serializers.ListField(child=EvidenceIdField())
 
 
 class TeamSnapshotSerializer(serializers.Serializer):
     schema_version = serializers.IntegerField()
     run_id = serializers.UUIDField()
-    snapshot_id = serializers.CharField()
+    snapshot_id = serializers.UUIDField()
     last_event_id = serializers.IntegerField(min_value=0)
     tasks = TeamTaskSerializer(many=True)
     artifacts = TeamArtifactSerializer(many=True)
@@ -112,7 +118,7 @@ class TeamSnapshotSerializer(serializers.Serializer):
 
 
 class TeamCommandResponseSerializer(serializers.Serializer):
-    id = serializers.CharField()
+    id = serializers.UUIDField()
     type = serializers.CharField()
     status = serializers.ChoiceField(choices=["queued", "running", "completed", "failed"])
     result = serializers.JSONField(allow_null=True)

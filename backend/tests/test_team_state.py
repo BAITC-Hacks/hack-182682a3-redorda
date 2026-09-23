@@ -1,5 +1,13 @@
 import pytest
-from apps.campaigns.models import CampaignRun, Dataset, RunEvent, TeamArtifact, TeamCommand
+from apps.campaigns.models import (
+    CampaignResult,
+    CampaignRun,
+    Dataset,
+    RunEvent,
+    TeamArtifact,
+    TeamCommand,
+    TeamTask,
+)
 from apps.campaigns.services.engine_bridge import run_engine
 from apps.campaigns.services.execution import ExecutionUnavailable
 from apps.campaigns.services.team_state import (
@@ -94,6 +102,57 @@ def test_cancelled_snapshot_and_command_unique_key(run):
                                    request_hash="a" * 64)
 
 
+@pytest.mark.parametrize("run_status", ["failed", "cancelled"])
+def test_terminal_run_restores_unfinished_tasks_as_terminal(run, run_status):
+    task_statuses = ["pending", "running", "completed", "failed", "cancelled"]
+    for status in task_statuses:
+        TeamTask.objects.create(run=run, task_id=status, actor_id="analyst",
+                                title=status, status=status)
+    run.status = run_status
+    run.save(update_fields=["status"])
+
+    snapshot = get_team_snapshot(run_id=run.pk)
+    assert {task["id"]: task["status"] for task in snapshot["tasks"]} == {
+        "pending": run_status, "running": run_status, "completed": "completed",
+        "failed": "failed", "cancelled": "cancelled",
+    }
+    assert snapshot["available_commands"] == []
+    # The projection must retain the last observed statuses in persisted facts.
+    assert set(run.team_tasks.values_list("status", flat=True)) == set(task_statuses)
+
+
+@pytest.mark.parametrize("invalid_ids", ["", {}, (), None, [1], [{}]])
+def test_invalid_artifact_ids_rejected_before_event_is_saved(run, invalid_ids):
+    with pytest.raises(ValueError, match="Artifact IDs must be a list"):
+        _event(run, artifact_ids=invalid_ids)
+    assert not run.events.exists()
+    assert not run.team_tasks.exists()
+
+
+def test_snapshot_only_advertises_available_analysis_capabilities(run, monkeypatch):
+    from apps.campaigns.services import team_ai
+
+    def unavailable(name):
+        raise team_ai.CapabilityUnavailable(name)
+
+    monkeypatch.setattr(team_ai, "_function", unavailable)
+    CampaignResult.objects.create(run=run, rank=1, campaign={
+        "campaign_name": "Plan", "target_tariff": "tariff_2", "channel": "push"})
+    run.status = "completed"
+    run.save(update_fields=["status"])
+
+    snapshot = get_team_snapshot(run_id=run.pk)
+    assert snapshot["available_commands"] == ["create_plan"]
+    stored = load_snapshot(run_id=run.pk, snapshot_id=snapshot["snapshot_id"])
+    assert stored.engine_state["config"] == {
+        "budget": "100000.00", "max_contacts": 15000, "max_pilots": 20,
+        "seed": 42, "strategy": "baseline", "constraints": {},
+    }
+    assert stored.engine_state["campaigns"][0]["id"] == 1
+    assert stored.engine_state["resource_usage"] is None
+    assert stored.engine_state["estimates"] is None
+
+
 def test_handoff_creates_pending_next_task_and_checks_actors(run):
     _event(run)
     event = _event(run, "task_handoff", from_actor="analyst", to_actor="finance",
@@ -128,7 +187,8 @@ def test_bridge_observer_saves_task_artifact_and_event(run, monkeypatch):
                            "title": "Checks", "data": {"ok": True}, "evidence_ids": []}]}})
         return EngineResult(status="completed", campaigns=[{
             "campaign_name": "Plan", "target_tariff": "tariff_2", "channel": "push"}],
-            estimates={"campaigns": [{"n_contacts": 1, "cost": "0.00"}]})
+            estimates={"campaigns": [{"n_contacts": 1, "cost": "0.00",
+                                       "estimated_incremental_net": 10}]})
 
     monkeypatch.setattr(bridge, "run_campaigns", fake_engine)
     run_engine(run, check_cancel=lambda: False)

@@ -197,12 +197,16 @@ describe('пользовательский сценарий', () => {
     const create = vi.fn((_blob: Blob) => 'blob:test'); const revoke = vi.fn();
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke }));
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-    override = path => path.endsWith('/export/') ? new Response('campaign_name,channel\nТест,sms', { headers: { 'Content-Type': 'text/csv' } }) : undefined;
+    const csv = 'campaign_name,channel\nТест,sms';
+    override = path => path.endsWith('/export/') ? new Response(csv, { headers: { 'Content-Type': 'text/csv' } }) : undefined;
     fireEvent.click(screen.getByRole('button', { name: 'Скачать CSV' }));
     await waitFor(() => expect(click).toHaveBeenCalledOnce());
     const exportCall = calls.find(call => call.path.endsWith('/export/'));
     expect(new Headers(exportCall?.init?.headers).get('Accept')).toBe('text/csv, application/json');
-    expect(create.mock.calls[0][0]).toBeInstanceOf(Blob);
+    // Response.blob() uses Node's Blob in jsdom; verify the downloaded payload across realms.
+    const downloaded = create.mock.calls[0][0];
+    expect(downloaded.type).toBe('text/csv');
+    expect(await downloaded.text()).toBe(csv);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument(); click.mockRestore();
   });
 

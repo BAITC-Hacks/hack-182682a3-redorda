@@ -42,3 +42,17 @@ def explain(snapshot, campaign_id):
 
 def compare(snapshot, constraints):
     return _invoke("compare", snapshot, constraints)
+
+
+def available_command_types(engine_state):
+    """Advertise only saved-state operations supplied by the installed engine."""
+    commands = ["create_plan"]
+    if not isinstance(engine_state, dict) or not engine_state.get("campaigns"):
+        return commands
+    for name in ("explain", "compare"):
+        try:
+            _function(name)
+        except (CapabilityUnavailable, ImportError):
+            continue
+        commands.append(name)
+    return commands

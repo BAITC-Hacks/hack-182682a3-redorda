@@ -3,9 +3,12 @@
 React → `/api/v1/` → Django 5.2 → Celery → общий `campaign_engine` → публичная среда Beeline.
 Источник машинных схем: [openapi.yaml](openapi.yaml); подробные ответы: [backend-api.md](backend-api.md).
 
-Целевой контракт задач и команд: [team-contract.md](team-contract.md). HTTP-слой
-трёх маршрутов добавлен; хранение snapshot и выполнение команд требуют сервисов
-`team_state` и `team_commands` и до их подключения отвечают 503 `team_unavailable`.
+Контракт задач и команд: [team-contract.md](team-contract.md). Интегрированы
+хранение задач/артефактов, неизменяемые snapshot, HTTP API и очередь команд Celery.
+`create_plan` создаёт связанный черновик с новым бюджетом. `explain`/`compare`
+ожидают реализации функций анализа snapshot в AI-движке и пока отсутствуют в
+`available_commands`; прямой запрос завершается `failed/capability_unavailable`.
+Ограничение `allowed_channels` для нового плана пока также требует поддержки движка.
 
 ## Доступ и договорённость для frontend
 

@@ -106,9 +106,10 @@ def persist_team_event(*, run_id, kind, payload):
                      title=data.get("title"))
         evidence = data.get("evidence_ids", [])
         _references(run_id, evidence)
-        ids = list(data.get("artifact_ids", []))
-        if not isinstance(ids, list):
+        ids = data.get("artifact_ids", [])
+        if not isinstance(ids, list) or any(not isinstance(item, str) for item in ids):
             raise ValueError("Artifact IDs must be a list")
+        ids = list(ids)
         for artifact in artifacts:
             if artifact.get("task_id") != task.task_id:
                 raise ValueError("Artifact and task must match")
@@ -142,21 +143,19 @@ def persist_team_event(*, run_id, kind, payload):
 
 
 def get_team_snapshot(*, run_id) -> dict:
+    from apps.campaigns.services.team_ai import available_command_types
+
     with transaction.atomic():
         run = CampaignRun.objects.select_for_update().select_related("dataset").get(pk=run_id)
         cursor = RunEvent.objects.filter(run=run).aggregate(last=Max("id"))["last"] or 0
         tasks = [{"id": task.task_id, "actor_id": task.actor_id,
-                  "status": "cancelled" if run.status == "cancelled" and task.status == "running"
+                  "status": run.status if run.status in {"failed", "cancelled"}
+                  and task.status in {"pending", "running"}
                   else task.status, "title": task.title,
                   "artifact_ids": task.artifact_ids, "evidence_ids": task.evidence_ids}
                  for task in run.team_tasks.order_by("created_at", "pk")]
         artifacts = [_public(_artifact_dict(item)) for item in
                      run.team_artifacts.select_related("task").order_by("created_at", "pk")]
-        commands = []
-        if run.status == "completed" and run.campaign_results.exists():
-            commands = ["explain", "compare", "create_plan"]
-        public = {"schema_version": 1, "run_id": str(run.pk), "last_event_id": cursor,
-                  "tasks": tasks, "artifacts": artifacts, "available_commands": commands}
         summary = run.result.summary if hasattr(run, "result") else None
         engine = {"schema_version": 1, "engine_version": (
             summary.get("metadata", {}).get("engine_version") if summary else None),
@@ -173,6 +172,11 @@ def get_team_snapshot(*, run_id) -> dict:
                           run.campaign_results.order_by("rank")],
             "resource_usage": summary.get("resource_usage") if summary else None,
             "estimates": summary.get("estimates") if summary else None}
+        commands = []
+        if run.status == "completed" and engine["campaigns"]:
+            commands = available_command_types(engine)
+        public = {"schema_version": 1, "run_id": str(run.pk), "last_event_id": cursor,
+                  "tasks": tasks, "artifacts": artifacts, "available_commands": commands}
         snapshot = TeamSnapshot.objects.create(run=run, schema_version=1,
                                                last_event_id=cursor, public_state=public,
                                                engine_state=engine)

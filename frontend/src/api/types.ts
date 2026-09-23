@@ -63,6 +63,56 @@ export interface RunEventsPage {
   has_more: boolean;
 }
 
+export type TeamRole = 'lead' | 'analyst' | 'experiment' | 'finance' | 'control';
+export type TeamCommandType = 'explain' | 'compare' | 'create_plan';
+
+export interface TeamTask {
+  id: string;
+  actor_id: TeamRole;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  title: string;
+  artifact_ids: string[];
+  evidence_ids: (string | number)[];
+}
+
+export interface TeamArtifact {
+  id: string;
+  task_id: string;
+  type: 'hypotheses' | 'pilot_observation' | 'portfolio' | 'explanation' | 'comparison' | 'validation';
+  title: string;
+  data: Record<string, JsonValue>;
+  evidence_ids: (string | number)[];
+}
+
+export interface TeamSnapshot {
+  schema_version: number;
+  run_id: string;
+  snapshot_id: string;
+  last_event_id: number;
+  tasks: TeamTask[];
+  artifacts: TeamArtifact[];
+  available_commands: TeamCommandType[];
+}
+
+export interface TeamConstraints {
+  budget?: string;
+  allowed_channels?: Channel[];
+}
+
+export type TeamCommandInput = { snapshot_id: string } & (
+  | { type: 'explain'; parameters: { campaign_id: string } }
+  | { type: 'compare'; parameters: { constraints: TeamConstraints } }
+  | { type: 'create_plan'; parameters: { name: string; constraints: TeamConstraints } }
+);
+
+export interface TeamCommand {
+  id: string;
+  type: TeamCommandType;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  result: TeamArtifact | { run_id: string } | null;
+  error: { code: string; message: string; fields: Record<string, JsonValue> } | null;
+}
+
 export interface CampaignParameters {
   campaign_name: string;
   target_tariff: string;
