@@ -75,22 +75,32 @@ Worker работает с `prefork` и `concurrency=1`. Для API и worker д
 
 ## Compose
 
-Compose загружает `.env` в backend и worker. Пакет данных монтируется в оба сервиса
-по одному пути `/workspace/data/participant-kit`, только для чтения.
+Для локальной проверки нужны Docker с Compose v2 и Bash. Команда ниже сама создаёт
+игнорируемый Git `.env` со случайными паролем PostgreSQL и секретом Django,
+проверяет и распаковывает официальный ZIP через Python-контейнер, поднимает стек,
+импортирует полный набор и открывает интерактивное создание администратора:
 
 ```bash
-cp .env.example .env
+bash scripts/quickstart-compose.sh /абсолютный/путь/participant-kit.zip
 ```
 
-Задайте в `.env` `POSTGRES_PASSWORD`, серверный `OPENAI_API_KEY` при использовании
-OpenAI и `PARTICIPANT_KIT_DIR=/workspace/data/participant-kit`. Оставьте
-`REDORDA_RUN_EXECUTION_ENABLED=0` на время проверки; путь factory уже указан в образце.
-Затем:
+Имя пользователя и пароль выбирает сам проверяющий; готовых учётных данных нет.
+После команды откройте `http://localhost:5173` и войдите. В `.env` для этого
+локального HTTP-запуска стоят `DJANGO_DEBUG=1`, `REDORDA_REQUIRE_AUTH=1` и
+`REDORDA_RUN_EXECUTION_ENABLED=1`. Режим `baseline` не требует OpenAI; для
+`openai` добавьте серверный `OPENAI_API_KEY` в `.env` и пересоздайте backend и worker.
+
+Можно запустить скрипт без ZIP. Он поднимет интерфейс и создаст пользователя;
+встроенные четыре CSV импортируются кнопкой в «Аудитории», но расчёт симулятора
+для них недоступен, потому что в них нет `customer_profile.csv`. После получения
+полного ZIP повторите команду с путём к нему.
+
+Скрипт сохраняет существующий `.env` без изменений и требует, чтобы локальные
+флаги входа и расчёта в нём уже были включены. Вручную те же основные команды:
 
 ```bash
-.venv/bin/python scripts/import_participant_kit.py /ABSOLUTE/participant-kit.zip
-
 docker compose up --build -d
+docker compose exec backend python backend/manage.py createsuperuser
 docker compose exec backend python backend/manage.py import_participant_data \
   --path /workspace/data/participant-kit
 docker compose exec backend python backend/manage.py check_agent
@@ -98,16 +108,18 @@ docker compose exec worker python backend/manage.py check_agent
 docker compose exec worker celery --workdir backend -A config inspect ping --timeout 3
 ```
 
-После успешных проверок задайте `REDORDA_RUN_EXECUTION_ENABLED=1` в `.env` и
-пересоздайте сервисы: обычный `restart` не обновляет переменные контейнера.
+Пакет данных монтируется в backend и worker по одному пути
+`/workspace/data/participant-kit`, только для чтения. Для ручного пути заранее
+подготовьте `.env` с непустым `POSTGRES_PASSWORD` и распакуйте официальный ZIP
+командой `quickstart-compose.sh` либо `scripts/import_participant_kit.py`.
+При изменении `.env` пересоздайте сервисы: обычный `restart` не обновляет
+переменные контейнера.
 
 ```bash
 docker compose up -d --force-recreate backend worker
 curl -fsS http://127.0.0.1:5173/api/v1/ready/
 ```
 
-При необходимости создайте пользователя:
-`docker compose exec backend python backend/manage.py createsuperuser`.
 `migrate` применяет миграции и собирает статику до старта API; импорт dataset выполняется
 явно. При переносе существующей БД убедитесь, что сохранённый `Dataset.source_dir`
 доступен обоим контейнерам: повторный валидный импорт одинакового checksum обновляет
