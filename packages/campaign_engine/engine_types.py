@@ -15,6 +15,9 @@ class EngineOptions:
     scenario_count: int = 32
     risk_weight: float = 0.15
     screening_pilots: int = 8
+    portfolio_search: bool = True
+    portfolio_search_max_evaluations: int = 256
+    portfolio_search_seconds: float = 10.0
 
     def __post_init__(self):
         import math
@@ -36,6 +39,14 @@ class EngineOptions:
             raise ValueError("Invalid candidate/scenario count")
         if not 0 <= self.risk_weight <= 1 or not 1 <= self.screening_pilots <= 20:
             raise ValueError("Invalid risk/screening configuration")
+        if type(self.portfolio_search) is not bool:
+            raise ValueError("portfolio_search must be boolean")
+        if (type(self.portfolio_search_max_evaluations) is not int
+                or not 0 <= self.portfolio_search_max_evaluations <= 4096):
+            raise ValueError("Invalid portfolio search evaluation limit")
+        if (not math.isfinite(self.portfolio_search_seconds)
+                or not 0 <= self.portfolio_search_seconds <= 60):
+            raise ValueError("Invalid portfolio search time limit")
 
 
 @dataclass

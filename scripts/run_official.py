@@ -202,7 +202,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["local_eval", "make_submission"])
     args, forwarded = parser.parse_known_args()
-    kit = Path(os.getenv("PARTICIPANT_KIT_DIR", "data/participant-kit"))
+    kit = Path(os.getenv("PARTICIPANT_KIT_DIR") or "data/participant-kit")
     if not kit.is_absolute():
         kit = root / kit
     kit = kit.resolve()

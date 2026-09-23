@@ -97,7 +97,7 @@ def forecast_plan(index, channels, beliefs, pilots, campaigns, options, seed=42)
 
 class SnapshotAgent:
     def __init__(self, history, policy):
-        self.history, self.options = history, EngineOptions(policy=policy)
+        self.history, self.options = history, EngineOptions(policy=policy, portfolio_search=False)
         self.last_result = None
 
     def act(self, env):
