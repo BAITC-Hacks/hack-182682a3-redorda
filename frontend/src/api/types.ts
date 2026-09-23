@@ -5,9 +5,12 @@ export interface Dataset {
   customer_count: number;
   imported_at: string;
   summary: {
-    baseline_arpu: string;
+    baseline_arpu: string | number | null;
     tariff_count: number;
-    synthetic: boolean;
+    synthetic: boolean | null;
+    source_kind?: 'demo' | 'upload';
+    format?: 'raw_csv';
+    file_rows?: Record<string, number>;
     segments: Record<'arpu_segment' | 'data_segment' | 'call_segment', Record<string, number>>;
   };
 }
