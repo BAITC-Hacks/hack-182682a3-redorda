@@ -6,7 +6,9 @@ from typing import Literal
 
 @dataclass(frozen=True)
 class EngineOptions:
-    policy: Literal["adaptive", "evolve", "fixed_100", "fixed_200", "wide_100"] = "adaptive"
+    policy: Literal[
+        "adaptive", "evolve", "fixed_100", "fixed_200", "wide_100", "adaptive_choice_200"
+    ] = "adaptive"
     runtime_seconds: float = 240.0
     pilot_contact_cap: int = 2000
     candidate_limit: int = 24
@@ -17,7 +19,14 @@ class EngineOptions:
     def __post_init__(self):
         import math
 
-        if self.policy not in {"adaptive", "evolve", "fixed_100", "fixed_200", "wide_100"}:
+        if self.policy not in {
+            "adaptive",
+            "evolve",
+            "fixed_100",
+            "fixed_200",
+            "wide_100",
+            "adaptive_choice_200",
+        }:
             raise ValueError("Unknown pilot policy")
         if not math.isfinite(self.runtime_seconds) or not 0 < self.runtime_seconds <= 300:
             raise ValueError("runtime_seconds must be in (0, 300]")

@@ -69,7 +69,8 @@ class PortfolioBuilder:
         return self._prefixes[key]
 
     def build(self, candidates, beliefs, pilots, *, budget, contacts,
-              official_budget, official_contacts, force_nonempty=True) -> Portfolio:
+              official_budget, official_contacts, force_nonempty=True,
+              allowed_channels=None) -> Portfolio:
         samples = belief_scenarios(beliefs, self.options.scenario_count, self.seed)
         count = self.options.scenario_count
         pilot_effects, pilot_probs = {}, {}
@@ -101,6 +102,9 @@ class PortfolioBuilder:
             arm = candidate.arm
             cell = (arm.current_tariff, arm.arpu_segment)
             for channel in self.channels:
+                if (allowed_channels is not None and cell in allowed_channels
+                        and channel not in allowed_channels[cell]):
+                    continue
                 ratio = effect_ratio(samples[arm], channel, self.channels)
                 combined = expected_best_ratio(
                     pilot_effects.get(cell, []) + [ratio],
