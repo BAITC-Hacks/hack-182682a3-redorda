@@ -58,7 +58,7 @@ def test_unavailable_broker_is_terminal_and_late_delivery_is_ignored(run, monkey
 
 def test_cancel_before_claim_and_duplicate_claim(run, monkeypatch):
     monkeypatch.setattr("apps.campaigns.services.execution._publish", lambda *_: None)
-    start_run(run.pk, idempotency_key="one")
+    run = start_run(run.pk, idempotency_key="one")
     request_cancel(run.pk)
     run.refresh_from_db()
     assert run.status == "cancelled"
@@ -68,7 +68,7 @@ def test_cancel_before_claim_and_duplicate_claim(run, monkeypatch):
 
 def test_running_cancel_is_cooperative_and_terminal_is_immutable(run, monkeypatch):
     monkeypatch.setattr("apps.campaigns.services.execution._publish", lambda *_: None)
-    start_run(run.pk, idempotency_key="one")
+    run = start_run(run.pk, idempotency_key="one")
     assert begin_run(run.pk, run.task_id).status == "running"
     assert begin_run(run.pk, run.task_id) is None
     request_cancel(run.pk)
