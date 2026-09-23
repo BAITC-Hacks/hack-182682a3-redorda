@@ -1,6 +1,6 @@
 import { Download } from 'lucide-react';
 import type { RunResults as Results } from '../api/types';
-import { channelLabels, formatEffect, formatNumber } from './presentation';
+import { channelLabels, formatEffect, formatNumber, warningText } from './presentation';
 
 export default function RunResults({ results, exporting, canExport, onExport }: {
   results: Results | null; exporting: boolean; canExport: boolean; onExport: () => void;
@@ -12,9 +12,9 @@ export default function RunResults({ results, exporting, canExport, onExport }: 
         <Download size={17} />{exporting ? 'Скачиваем…' : 'Скачать CSV'}</button></div>
     {!canExport && <p className="subtle">Экспорт пока недоступен на сервере.</p>}
     {!results ? <div className="panel"><p role="status">Ожидаем сохранённые результаты расчёта.</p></div> : <>
-      {results.warnings.length > 0 && <div className="notice"><h3>Ограничения прогноза</h3><ul>{results.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div>}
+      {results.warnings.length > 0 && <div className="notice"><h3>Ограничения прогноза</h3><ul>{results.warnings.map((warning, index) => <li key={index}>{warningText(warning)}</li>)}</ul></div>}
       <div className="effect-summary">
-        <div aria-label="Прогнозный эффект"><span>Прогнозный эффект</span><strong>{formatEffect(results.totals.forecast_effect)}</strong><p>Оценка на основе пилотов</p></div>
+        <div aria-label="Прогнозный эффект"><span>Прогнозный эффект</span><strong>{formatEffect(results.totals.forecast_effect)}</strong><p>Оценка на основе пилотов</p>{results.totals.lower_tail_mean_10 != null && <p>Среднее в нижних 10% модельных исходов: {formatEffect(results.totals.lower_tail_mean_10)}</p>}</div>
         <div aria-label="Результат симуляции"><span>Результат симуляции</span><strong>{formatEffect(results.totals.simulated_effect)}</strong><p>Фактический ответ симулятора</p></div>
       </div>
       {results.campaigns.length === 0 ? <div className="empty"><h3>Подходящих кампаний не найдено</h3>

@@ -18,9 +18,18 @@ The worker claims only `queued` runs with its matching task ID under a row
 lock. A duplicate delivery sees `running` or a terminal state and exits before
 calling the agent. Celery automatic retries are disabled. Events are saved for
 `queued`, `running`, `cancel_requested`, each `pilot_completed`, each
-`campaign_result`, `result_ready`, and the terminal status. Pilots and campaign
-results are saved as soon as the real engine provides them. Terminal states
-are immutable under late deliveries and timeout guards.
+`campaign_result`, `result_ready`, and the terminal status, alongside events from
+the shared runner. Pilots and campaign results are persisted as they become
+available. Terminal states are immutable under late deliveries and timeout guards.
+
+`pilot_completed` is appended once, immediately after persisting the public
+environment response. Its payload contains `sequence`, `channel`,
+`requested_customers`, `n_customers`, `cost`, `request`, and the public fields of
+`observation`. The runner's subsequent belief update becomes a separate
+`pilot_estimate_updated` event with `{sequence, posterior}`. Previously returned
+events are never rewritten, so a client using `after` cannot miss an update.
+The runner event `run_completed` means its portfolio is ready; the web run remains
+`running` until result persistence, validation, and the task's final transition.
 
 The worker checks the cancellation flag before each public environment access,
 before and after each pilot, and before saving each campaign. `queued` runs
@@ -29,32 +38,60 @@ second soft limit, a 600 second hard limit, and a one-shot guard scheduled for
 610 seconds to mark runs whose worker was killed. A worker must not restart a
 `running` calculation: a pilot may have happened before the process died.
 
-Production requires `REDORDA_ENVIRONMENT_FACTORY` to be a dotted import path
-for a callable accepting `EngineContext` and returning an implementation of
-the public `AgentEnvironment` protocol. The context contains `dataset_path`,
-`budget`, `max_contacts`, `max_pilots`, `seed`, and `strategy`. The factory must
-use only public organizer APIs. It must return actual pilot responses with
-`cost` and `n_customers` so each pilot can be persisted. The worker calls the
-shared `campaign_engine.Agent.act(env)`; there is no backend strategy or fake
-result. The API remains disabled until `REDORDA_RUN_EXECUTION_ENABLED=1` and a factory
-are configured. It returns 503 `engine_unavailable` without queueing. If an
-operator enables an incomplete integration, the worker ends `failed` with
-`engine_unavailable`.
+`REDORDA_ENVIRONMENT_FACTORY` is a dotted import path for a callable accepting
+`EngineContext` and returning the public `AgentEnvironment` protocol. The context
+contains `dataset_path`, `budget`, `max_contacts`, `max_pilots`, `seed`, and
+`strategy`. The implemented factory is
+`apps.campaigns.services.participant_environment.create_environment`. It loads the
+complete kit at the saved `Dataset.source_dir` and calls public
+`make_mock_env(seed)`. It returns only the environment; model internals are not
+passed to the agent. It verifies the profile against the selected dataset, tariff
+codes, channel costs, fresh counters, and empty pilot history. CSV and module
+paths are resolved inside the factory call and restored afterward; workers use
+prefork.
 
-`CampaignResult.metrics` and `RunResult.summary` contain only data returned by
-the engine. If its current `list[dict]` output contains campaigns alone, these
-fields are empty; the backend does not invent predicted uplift or simulation
-results. The test runner is injected only by tests.
+The worker calls shared `run_campaigns` with a `RunConfig` built from the saved run,
+history loaded from that dataset, an event observer, and cooperative cancellation.
+`Agent.act` calls the same runner for direct use. HTTP `baseline` and `openai`
+select the hypothesis source; pilot selection and the portfolio optimizer are
+shared. An unavailable OpenAI response causes the runner to record `fallback_used`
+and continue with deterministic hypotheses.
+
+`meta.features.run_execution` is true only when `REDORDA_RUN_EXECUTION_ENABLED=1`
+and a factory path is configured. `openai_strategy` additionally requires a
+nonempty server `OPENAI_API_KEY`. Creating an unavailable OpenAI draft returns
+400 with `fields.strategy`; starting one returns 503 `openai_unavailable`.
+A new baseline draft with execution disabled returns 503 `engine_unavailable`.
+Neither failure queues a task or changes the draft status. A same-key retry of
+an already-started run is returned before the feature gate. These flags check
+configuration, not worker health, dataset completeness, or validity of the key.
+`manage.py check_agent` checks the dataset and fresh environment without pilots
+or model requests; deployment steps are in [deployment.md](deployment.md).
+
+`CampaignResult.metrics` persists the runner's `n_contacts`, `cost`, and
+`estimated_incremental_net`. `RunResult.summary.predicted_effect` contains
+`source="posterior_forecast_not_official_score"`, `net_arpu_gain_mean`,
+`lower_tail_mean_10`, and `objective`. The lower-tail estimate is a model scenario
+statistic, not a confidence interval. Warnings, limits of the estimate, resource
+usage, metadata, and stop reason are saved in the summary. Separate final simulator
+evaluation is not part of this web path, so `simulator_result` stays `null`.
+Historical results with missing metrics keep those fields unknown. The legacy
+`runner` argument in `run_engine` remains a test seam only.
 
 PostgreSQL row locks provide the concurrency guarantee in deployment.
 `backend/tests/integration/` tests eight concurrent HTTP starts, duplicate claims,
 live Redis delivery, cancellation, worker exceptions, and a separate prefork
 worker. Run `make check-integration` against a dedicated PostgreSQL database.
-Successful pipeline tests inject a runner exclusively in tests; they do not
-validate the unfinished competition strategy.
+Those infrastructure tests use controlled runners. `test_engine_integration.py`
+exercises the real shared runner on a controlled public environment, while
+`test_participant_pipeline.py` covers HTTP start, the actual Celery task body,
+results and CSV against an installed participant kit (skipped when it is absent).
+These checks establish integration behavior, not an algorithm performance advantage.
 
-The adapter checks requested pilot count, contacts and public channel cost before
-calling the environment, and validates saved output before completing a run.
-Unknown final metrics remain unknown; the AI adapter must enforce the real
-environment limits. macOS spawn children initialize Celery task tracing in
+The adapter validates request sizes and pilot count, then computes achievable
+contacts from audience filters, public resource counters and channel price before
+calling the environment. The actual response must match this count and cost;
+small audiences can yield fewer contacts than requested. Both the shared runner
+and backend validate resource limits and saved results before completing a run.
+macOS spawn children initialize Celery task tracing in
 `config/celery.py`; otherwise Celery 5.6 can fail before calling the task body.

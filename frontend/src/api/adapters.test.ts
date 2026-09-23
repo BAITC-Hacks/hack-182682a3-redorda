@@ -22,8 +22,20 @@ describe('backend wire contract', () => {
       warnings: ['Недостаточно наблюдений'],
     };
     const result = toResults(wire);
-    expect(result.totals).toEqual({ spent: null, contacts_used: null, forecast_effect: null, simulated_effect: null });
+    expect(result.totals).toEqual({ spent: null, contacts_used: null, forecast_effect: null, simulated_effect: null, lower_tail_mean_10: null });
     expect(result.campaigns[0]).toMatchObject({ cost: null, customers: null, forecast_effect: null, rationale: 'Обоснование не предоставлено' });
     expect(result.warnings).toEqual(wire.warnings);
   });
+  it('renders structured agent forecasts without treating them as simulator measurements', () => {
+    const wire: RunResult = { run_id: '1', status: 'completed', campaigns: [], warnings: [],
+      totals: { pilot_cost: '0.00', campaign_cost: '100', total_cost: '100', pilot_contacts: 0,
+        total_contacts: 12, predicted_effect: { source: 'pilot_forecast', net_arpu_gain_mean: 42.5, lower_tail_mean_10: -8.25 }, simulator_result: null },
+    };
+    expect(toResults(wire).totals.forecast_effect).toBe('42.5');
+    expect(toResults(wire).totals.lower_tail_mean_10).toBe('-8.25');
+    expect(toResults(wire).totals.simulated_effect).toBeNull();
+    wire.totals.predicted_effect = '41.0';
+    expect(toResults(wire).totals.forecast_effect).toBe('41.0');
+  });
+
 });

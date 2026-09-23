@@ -1,5 +1,11 @@
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
+export interface Session {
+  authenticated: boolean;
+  user: { id: number; username: string; is_staff: boolean } | null;
+  csrf_token?: string;
+}
+
 export interface Dataset {
   id: string;
   name: string;
@@ -133,6 +139,7 @@ export interface RunResults {
     contacts_used: number | null;
     forecast_effect: string | null;
     simulated_effect: string | null;
+    lower_tail_mean_10?: string | null;
   };
 }
 
@@ -142,7 +149,7 @@ export interface RunInput {
   max_contacts: number;
   max_pilots: number;
   seed: number;
-  strategy: 'baseline';
+  strategy: 'baseline' | 'openai';
 }
 
 export interface Page<T> {
@@ -157,10 +164,4 @@ export interface Meta {
   limits: Record<string, number>;
   channel_costs: Record<string, number>;
   features: { run_execution: boolean; openai_strategy: boolean; csv_export: boolean };
-}
-
-export interface Session {
-  authenticated: boolean;
-  user: { id: number; username: string; is_staff: boolean } | null;
-  csrf_token?: string;
 }

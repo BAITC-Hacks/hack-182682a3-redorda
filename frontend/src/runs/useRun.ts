@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
+import { mergeEvents, nextEventCursor } from '../api/run-state';
 import type { Run, RunEvent, RunResults } from '../api/types';
 import { isActive } from './presentation';
 
@@ -38,10 +39,8 @@ export function useRun(id: string) {
           while (more && !controller.signal.aborted) {
             const page = await api.events(id, cursor.current, controller.signal);
             if (controller.signal.aborted) return;
-            const nextCursor = page.next_after;
-            if (!Number.isInteger(nextCursor) || nextCursor < cursor.current || (page.has_more && nextCursor === cursor.current)) throw new Error('Не удалось загрузить следующую страницу журнала.');
-            cursor.current = nextCursor;
-            setEvents(previous => Array.from(new Map([...previous, ...page.results].map(event => [event.id, event])).values()).sort((a, b) => a.id - b.id));
+            cursor.current = nextEventCursor(cursor.current, page);
+            setEvents(previous => mergeEvents(previous, page.results));
             more = page.has_more;
           }
         } catch (reason) { failures.push(`Не удалось обновить журнал. ${message(reason)}`); }

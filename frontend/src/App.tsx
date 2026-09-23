@@ -83,7 +83,8 @@ function NewRun({ dataset, meta }: { dataset: DatasetType | null; meta: Meta }) 
     const values = new FormData(event.currentTarget);
     try {
       const run = await api.createRun({ name: String(values.get('name')), budget: String(values.get('budget')),
-        max_contacts: Number(values.get('contacts')), max_pilots: Number(values.get('pilots')), seed: 42, strategy: 'baseline' });
+        max_contacts: Number(values.get('contacts')), max_pilots: Number(values.get('pilots')),
+        seed: Number(values.get('seed')), strategy: meta.features.openai_strategy && values.get('strategy') === 'openai' ? 'openai' : 'baseline' });
       navigate(`/runs/${run.id}`);
     } catch (e) { setError(e); } finally { submitting.current = false; setBusy(false); }
   }
@@ -93,6 +94,8 @@ function NewRun({ dataset, meta }: { dataset: DatasetType | null; meta: Meta }) 
       <div className="form-grid"><label>Бюджет, у. е.<input name="budget" type="number" step="0.01" min="0.01" max={meta.limits.budget} defaultValue={meta.limits.budget} required /></label>
       <label>Максимум контактов<input name="contacts" type="number" min="1" max={meta.limits.contacts} defaultValue={meta.limits.contacts} required /></label></div>
       <label>Количество пилотов<input name="pilots" type="number" min="1" max={meta.limits.pilots} defaultValue={meta.limits.pilots} required /></label>
+      {meta.features.openai_strategy && <label>Способ поиска гипотез<select name="strategy" defaultValue="baseline"><option value="baseline">Расчётная стратегия</option><option value="openai">OpenAI + расчётная стратегия</option></select><small className="field-help">OpenAI предлагает гипотезы; пилоты и распределение бюджета рассчитывает движок.</small></label>}
+      <label>Seed для повторяемости<input name="seed" type="number" step="1" min="0" max="2147483647" defaultValue="42" required /></label>
       <p className="subtle">Бюджет и контакты включают предварительные эксперименты.</p>
       {!meta.features.run_execution && <div className="notice">Можно сохранить план. Расчёты пока недоступны на сервере.</div>}
       {error !== null && <><ErrorMessage error={error} />{error instanceof ApiError && Object.keys(error.fields).length > 0 && <ul className="field-errors">{Object.entries(error.fields).map(([key, value]) => <li key={key}>{key}: {String(value)}</li>)}</ul>}</>}

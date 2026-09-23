@@ -31,7 +31,10 @@ beforeEach(() => {
     if (path === 'runs/plan-1/') return json({ ...draft, status, ...(status !== 'draft' ? { progress } : {}) });
     if (path === 'runs/plan-1/start/') { status = 'queued'; return json({ ...draft, status }, 202); }
     if (path === 'runs/plan-1/cancel/') return json({ ...draft, status, progress, cancellation_requested: true }, 202);
-    if (path.startsWith('runs/plan-1/events/')) return json({ next_after: 1, has_more: false, results: [event] });
+    if (path.startsWith('runs/plan-1/events/')) {
+      const after = Number(new URLSearchParams(path.split('?')[1]).get('after'));
+      return json({ next_after: Math.max(after, 1), has_more: false, results: after < event.id ? [event] : [] });
+    }
     if (path === 'runs/plan-1/results/') return json(results);
     if (path === 'runs/') return json(draft, 201);
     throw new Error(`Unexpected request: ${path}`);

@@ -23,7 +23,11 @@ export function toEvent(value: ApiRunEvent): RunEvent {
     pilot_started: 'Пилот начат', pilot_completed: 'Пилот завершён', result_ready: 'Финальный план сохранён',
     run_completed: 'Расчёт завершён', run_failed: 'Расчёт завершился с ошибкой',
     cancellation_requested: 'Запрошена остановка', run_cancelled: 'Расчёт остановлен',
-    campaign_selected: 'Кампания включена в план',
+    campaign_selected: 'Кампания включена в план', pilot_estimate_updated: 'Прогноз по пилоту обновлён',
+    queued: 'Расчёт поставлен в очередь', running: 'Расчёт начат', completed: 'Расчёт завершён',
+    failed: 'Расчёт завершился с ошибкой', cancelled: 'Расчёт остановлен',
+    cancel_requested: 'Запрошена остановка', portfolio_updated: 'Портфель кампаний обновлён',
+    fallback_used: 'Используются расчётные гипотезы', campaign_result: 'Результат кампании сохранён',
   };
   const payload = value.payload;
   const request = record(payload.request);
@@ -36,7 +40,7 @@ export function toEvent(value: ApiRunEvent): RunEvent {
     observed_lift_ratio: count(observation.observed_lift_ratio),
   } : null;
   return { id: value.id, created_at: value.created_at,
-    kind: value.kind === 'run_failed' ? 'error' : value.kind === 'warning' ? 'warning' : pilot ? 'pilot' : 'info',
+    kind: ['run_failed', 'failed'].includes(value.kind) ? 'error' : value.kind === 'warning' ? 'warning' : pilot ? 'pilot' : 'info',
     message: messages[value.kind] ?? `Событие: ${value.kind}`, pilot };
 }
 
@@ -47,11 +51,12 @@ export function toResults(value: RunResult): RunResults {
       id: String(c.rank), campaign_name: c.parameters.campaign_name, target_tariff: c.parameters.target_tariff,
       channel: c.parameters.channel,
       audience: Object.entries(c.parameters).filter(([key]) => key in labels).map(([key, filter]) => `${labels[key]}: ${filter}`).join(' · ') || 'Все подходящие клиенты',
-      customers: count(c.metrics.n_contacts), cost: scalar(c.metrics.cost), forecast_effect: scalar(c.metrics.predicted_effect),
+      customers: count(c.metrics.n_contacts), cost: scalar(c.metrics.cost), forecast_effect: scalar(c.metrics.predicted_effect ?? c.metrics.estimated_incremental_net),
       rationale: c.explanation || 'Обоснование не предоставлено',
     })),
     warnings: value.warnings,
     totals: { spent: scalar(value.totals.total_cost), contacts_used: count(value.totals.total_contacts),
-      forecast_effect: scalar(value.totals.predicted_effect), simulated_effect: scalar(value.totals.simulator_result) },
+      forecast_effect: scalar(record(value.totals.predicted_effect).net_arpu_gain_mean ?? value.totals.predicted_effect), simulated_effect: scalar(value.totals.simulator_result),
+      lower_tail_mean_10: scalar(record(value.totals.predicted_effect).lower_tail_mean_10) },
   };
 }

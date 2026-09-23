@@ -35,7 +35,8 @@ class Command(BaseCommand):
             dataset = Dataset.objects.select_for_update().get(pk=dataset.pk)
             if not created:
                 dataset.imported_at = timezone.now()
-                dataset.save(update_fields=["imported_at"])
+                dataset.source_dir = str(source)
+                dataset.save(update_fields=["imported_at", "source_dir"])
             if not dataset.subscribers.exists():
                 Subscriber.objects.bulk_create((
                     Subscriber(dataset=dataset, id_number=row["ID_NUMBER"].strip(), profile=row)

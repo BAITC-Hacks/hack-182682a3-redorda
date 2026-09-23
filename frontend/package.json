@@ -7,7 +7,7 @@
     "node": ">=20.19"
   },
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run && node --test tests/*.test.mjs",
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
@@ -30,6 +30,7 @@
     "jsdom": "^25.0.1",
     "typescript": "~5.7.3",
     "vite": "6.4.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "esbuild": "0.25.12"
   }
 }

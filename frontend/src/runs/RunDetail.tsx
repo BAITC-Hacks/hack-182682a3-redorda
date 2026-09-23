@@ -2,24 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, useParams } from 'react-router-dom';
 import { Check, FlaskConical, Play, RefreshCw, Square } from 'lucide-react';
 import { api } from '../api/client';
+import { startKeyForRun } from '../api/run-state';
 import type { Meta, Run } from '../api/types';
 import { channelLabels, formatNumber, isActive, statusLabels } from './presentation';
 import RunResults from './RunResults';
 import { useRun } from './useRun';
 import './runs.css';
-
-const startKeys = new Map<string, string>();
-function startKey(id: string) {
-  const storageKey = `redorda:start:${id}`;
-  try {
-    const stored = sessionStorage.getItem(storageKey);
-    if (stored) return stored;
-  } catch { /* A blocked sessionStorage still permits same-page retries. */ }
-  const key = startKeys.get(id) ?? crypto.randomUUID();
-  startKeys.set(id, key);
-  try { sessionStorage.setItem(storageKey, key); } catch { /* In-memory fallback above. */ }
-  return key;
-}
 
 function Stepper({ status }: { status: Run['status'] }) {
   const current = status === 'draft' ? 0 : status === 'completed' ? 2 : 1;
@@ -53,7 +41,7 @@ function Detail({ id, meta }: { id: string; meta: Meta }) {
         document.body.appendChild(link); link.click(); link.remove();
         window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       } else {
-        const value = kind === 'start' ? await api.startRun(id, startKey(id), controller.signal) : await api.cancelRun(id, controller.signal);
+        const value = kind === 'start' ? await api.startRun(id, startKeyForRun(id), controller.signal) : await api.cancelRun(id, controller.signal);
         if (controller.signal.aborted) return;
         if (kind === 'cancel') { setCancelRequested(true); setConfirmCancel(false); }
         accept(value);
@@ -84,7 +72,7 @@ function Detail({ id, meta }: { id: string; meta: Meta }) {
 
   return <div className="run-detail">
     <NavLink className="back-link" to="/runs">← Все планы</NavLink>
-    <div className="section-heading"><div><h1>{run.name}</h1><p className="run-meta">Создан {new Date(run.created_at).toLocaleString('ru-RU')} · {run.strategy === 'openai' ? 'AI-стратегия' : 'Базовая стратегия'}</p></div>
+    <div className="section-heading"><div><h1>{run.name}</h1><p className="run-meta">Создан {new Date(run.created_at).toLocaleString('ru-RU')} · {run.strategy === 'openai' ? 'AI-стратегия' : 'Базовая стратегия'} · Seed {run.seed}</p></div>
       <span className={`badge status-${run.status}`} role="status">{statusLabels[run.status]}</span></div>
     <Stepper status={run.status} />
     {meta.environment && <div className="notice">{meta.environment.label}</div>}

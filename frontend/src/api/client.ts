@@ -21,12 +21,17 @@ function responseError(status: number, payload: any) {
 let csrfToken: string | null = null;
 const unauthorizedListeners = new Set<() => void>();
 
+export function onAuthenticationRequired(listener: () => void) {
+  unauthorizedListeners.add(listener);
+  return () => { unauthorizedListeners.delete(listener); };
+}
+
 async function request<T>(path: string, init?: RequestInit, csv = false, timeoutMs = 15000): Promise<T> {
   const controller = new AbortController();
   const abort = () => controller.abort();
   init?.signal?.addEventListener('abort', abort, { once: true });
   if (init?.signal?.aborted) controller.abort();
-  const timeout = window.setTimeout(abort, timeoutMs);
+  const timeout = globalThis.setTimeout(abort, timeoutMs);
   const headers = new Headers(init?.headers);
   // DRF negotiates JSON errors before the streaming CSV view executes.
   headers.set('Accept', csv ? 'text/csv, application/json' : 'application/json');
@@ -59,13 +64,17 @@ async function request<T>(path: string, init?: RequestInit, csv = false, timeout
       ? 'Сервер не ответил вовремя. Проверьте соединение и повторите запрос.'
       : 'Нет связи с сервером. Проверьте соединение и повторите запрос.');
   } finally {
-    window.clearTimeout(timeout);
+    globalThis.clearTimeout(timeout);
     init?.signal?.removeEventListener('abort', abort);
   }
 }
 
 async function csrf(signal?: AbortSignal): Promise<string> {
   const result = await request<{ csrf_token: string }>('auth/csrf/', { signal });
+  if (typeof result.csrf_token !== 'string' || !result.csrf_token.trim()) {
+    csrfToken = null;
+    throw new ApiError(502, 'Сервер не вернул CSRF-токен.');
+  }
   csrfToken = result.csrf_token;
   return csrfToken;
 }
@@ -125,8 +134,10 @@ async function importDataset(files: File[], onProgress: (progress: ImportProgres
   });
 }
 
+
 export const api = {
-  me: () => request<Session>('auth/me/'),
+  me: (signal?: AbortSignal) => request<Session>('auth/me/', { signal }),
+  session: (signal?: AbortSignal) => request<Session>('auth/me/', { signal }),
   login: async (username: string, password: string) => {
     await csrf();
     return request<Session>('auth/login/', {
@@ -138,11 +149,11 @@ export const api = {
     unauthorizedListeners.add(listener);
     return () => { unauthorizedListeners.delete(listener); };
   },
-  meta: () => request<Meta>('meta/'),
-  dataset: () => request<Dataset>('datasets/current/'),
+  meta: (signal?: AbortSignal) => request<Meta>('meta/', { signal }),
+  dataset: (signal?: AbortSignal) => request<Dataset>('datasets/current/', { signal }),
   importDemo: (signal?: AbortSignal) => request<Dataset>('datasets/import-demo/', { method: 'POST', body: '{}', signal }, false, 5 * 60 * 1000).then(importedDataset),
   importDataset,
-  runs: (page = 1) => request<Page<ApiRun>>(`runs/?page=${page}`).then(page => ({ ...page, results: page.results.map(toRun) })),
+  runs: (page = 1, signal?: AbortSignal) => request<Page<ApiRun>>(`runs/?page=${page}`, { signal }).then(page => ({ ...page, results: page.results.map(toRun) })),
   run: (id: string, signal?: AbortSignal) => request<ApiRun>(`runs/${id}/`, { signal }).then(toRun),
   createRun: (input: RunInput) => request<ApiRun>('runs/', {
     method: 'POST', body: JSON.stringify(input),

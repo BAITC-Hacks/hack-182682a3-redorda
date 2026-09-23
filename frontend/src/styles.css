@@ -35,3 +35,5 @@
 .logout-button{flex-shrink:0;border:1px solid var(--border);border-radius:7px;background:#fff;padding:9px 12px;color:#4b554d;font-size:11px;font-weight:700}
 .logout-button:hover:not(:disabled){background:#f6f7f4}
 @media(max-width:760px){.header-actions{gap:10px}.header-actions .connection{display:none}.logout-button{padding:8px 10px}}
+
+select{display:block;width:100%;font:inherit;border:1px solid #dfe3d6;border-radius:7px;padding:13px 14px;margin-top:9px;background:#fdfefb;color:inherit}select:focus-visible{outline:3px solid #fff7d6;border-color:#c3a022}.field-help{display:block;line-height:1.7;margin-top:9px;color:var(--muted);font-weight:400}

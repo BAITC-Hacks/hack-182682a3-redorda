@@ -2,15 +2,16 @@ import pytest
 from apps.campaigns.models import CampaignRun, Dataset
 from apps.campaigns.services import execution
 from apps.campaigns.services.public_environment import LOCAL_FACTORY
+from config.runtime import PARTICIPANT_FACTORY, dataset_execution_blocker
 from rest_framework.test import APIClient
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-@pytest.fixture
-def published(monkeypatch, settings):
-    settings.REDORDA_ENVIRONMENT_FACTORY = LOCAL_FACTORY
-    monkeypatch.setattr("apps.campaigns.views.execution_enabled", lambda: True)
+@pytest.fixture(params=[LOCAL_FACTORY, PARTICIPANT_FACTORY])
+def published(monkeypatch, settings, request):
+    settings.REDORDA_ENVIRONMENT_FACTORY = request.param
+    monkeypatch.setattr("apps.campaigns.views.strategy_enabled", lambda strategy: True)
     tasks = []
     monkeypatch.setattr(execution, "_publish", lambda *args: tasks.append(args))
     return tasks
@@ -46,3 +47,9 @@ def test_full_dataset_starts_and_idempotent_retry_ignores_later_readiness_change
     assert execution.start_run(run.pk, idempotency_key="same",
                                execution_available=False).task_id == first.task_id
     assert len(published) == 1
+
+
+def test_custom_factory_may_support_raw_csv(settings):
+    settings.REDORDA_ENVIRONMENT_FACTORY = "custom.compatible.environment"
+    dataset = Dataset(summary={"format": "raw_csv"})
+    assert dataset_execution_blocker(dataset) is None

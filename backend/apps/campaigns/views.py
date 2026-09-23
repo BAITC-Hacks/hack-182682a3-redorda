@@ -3,7 +3,12 @@ from itertools import chain
 from uuid import UUID
 
 from campaign_engine.contracts import CASE_LIMITS, CHANNEL_COSTS
-from config.runtime import environment_description, execution_enabled
+from config.runtime import (
+    environment_description,
+    execution_enabled,
+    openai_enabled,
+    strategy_enabled,
+)
 from django.apps import apps
 from django.db import connection
 from django.http import StreamingHttpResponse
@@ -50,6 +55,12 @@ class EngineUnavailable(APIException):
     status_code = 503
     default_detail = "Агент ещё не подключён. Запуск расчётов пока недоступен."
     default_code = "engine_unavailable"
+
+
+class OpenAIUnavailable(APIException):
+    status_code = 503
+    default_detail = "Режим OpenAI сейчас недоступен на сервере."
+    default_code = "openai_unavailable"
 
 
 class ResultNotAvailable(APIException):
@@ -104,7 +115,7 @@ class MetaView(APIView):
             "limits": CASE_LIMITS,
             "channel_costs": CHANNEL_COSTS,
             "environment": environment_description(),
-            "features": {"run_execution": execution_enabled(), "openai_strategy": False,
+            "features": {"run_execution": execution_enabled(), "openai_strategy": openai_enabled(),
                          "csv_export": True},
         })
 
@@ -153,10 +164,12 @@ class RunViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrieve
 
         try:
             run = execution.start_run(run.id, idempotency_key=key,
-                                      execution_available=execution_enabled())
+                                      execution_available=strategy_enabled(run.strategy))
         except execution.ExecutionConflict as exc:
             raise RunConflict() from exc
         except execution.EngineNotReady as exc:
+            if run.strategy == "openai" and not openai_enabled():
+                raise OpenAIUnavailable() from exc
             raise EngineUnavailable(detail=str(exc) or None) from exc
         except execution.ExecutionUnavailable as exc:
             raise ServiceUnavailable() from exc
