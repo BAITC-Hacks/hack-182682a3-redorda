@@ -26,7 +26,9 @@ def api_client():
 
 
 @pytest.fixture
-def service_modules(monkeypatch):
+def service_modules(monkeypatch, settings):
+    settings.REDORDA_RUN_EXECUTION_ENABLED = True
+    settings.REDORDA_ENVIRONMENT_FACTORY = "tests.only.factory"
     package = ModuleType("apps.campaigns.services")
     package.__path__ = []
     execution = ModuleType("apps.campaigns.services.execution")

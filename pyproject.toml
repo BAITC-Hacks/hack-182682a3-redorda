@@ -29,6 +29,7 @@ where = ["packages"]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
+markers = ["live: integration checks using a live Redis broker and PostgreSQL"]
 pythonpath = ["backend", "packages", "."]
 testpaths = ["backend/tests", "packages/campaign_engine/tests"]
 

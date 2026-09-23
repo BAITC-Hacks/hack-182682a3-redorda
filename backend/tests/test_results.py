@@ -80,3 +80,10 @@ def test_does_not_sum_per_campaign_effects_for_overlap(monkeypatch):
     run = saved_run(monkeypatch, metrics={"cost": "4.00", "gross_lift": "100.00"})
     output = results.get_results(run.id)
     assert output["totals"]["predicted_effect"] is None
+
+
+def test_known_pilot_cost_still_obeys_budget_when_campaign_cost_is_missing(monkeypatch):
+    run = saved_run(monkeypatch, pilot_cost="101.00")
+    run.budget = Decimal("100.00")
+    with pytest.raises(results.InvalidSavedResult, match="budget"):
+        results.get_results(run.id)

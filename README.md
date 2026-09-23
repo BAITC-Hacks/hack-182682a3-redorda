@@ -16,9 +16,17 @@
 
 ## Что уже есть
 
-Скелет запускается: импорт сводки публичного датасета, обзор аудитории, создание и просмотр черновиков планов, API и OpenAPI, миграция БД, адаптивный React-интерфейс, каркас OpenAI с типизированным ответом, тесты и CI.
+Интегрированы четыре backend-ветки: проверка и импорт семи CSV, модели и миграции,
+Django sessions/CSRF, очередь Celery, идемпотентный старт, отмена, журнал событий,
+сохранённые результаты и CSV. PostgreSQL, Redis, Gunicorn, worker и frontend описаны
+в Compose с healthchecks; CI проверяет PostgreSQL, живую очередь и сборку Compose.
 
-**Ещё предстоит:** стратегия `Agent.act`, запуск расчётов в Celery, пилоты, результаты и экспорт. Кнопка запуска пока недоступна. Вызовы OpenAI не выполняются автоматически. Публичный сайт: https://hack.1ge.kz — API пока доступен только для чтения. [Автодеплой на Mac mini](docs/deployment.md).
+**Блокеры:** `Agent.act` и адаптер публичной среды ещё не реализованы; запуск выключен
+(`engine_unavailable`). Полный успешный сценарий проверяется только тестовым runner.
+Frontend ещё должен подключить login/CSRF и новые API; при публичном режиме данные
+доступны после входа. Стратегия, реальные расчёты и конкурсный результат не объявлены готовыми.
+[Отчёт интеграции и проверки](docs/backend-integration.md).
+[Публичный сайт](https://hack.1ge.kz), [автодеплой на Mac mini](docs/deployment.md).
 
 ## Локальный запуск
 
@@ -30,7 +38,14 @@ make setup
 make migrate
 ```
 
-В двух терминалах: `make backend` и `make frontend`.
+Для просмотра достаточно двух терминалов: `make backend` и `make frontend`.
+Для очереди запустите PostgreSQL и Redis, укажите `DATABASE_URL` и `REDIS_URL` в `.env`,
+повторите `make migrate`, затем выполните `make worker` в третьем терминале.
+Создание оператора: `.venv/bin/python backend/manage.py createsuperuser` (пароль вводится вручную).
+Для проверки входа локально задайте `REDORDA_REQUIRE_AUTH=1`.
+
+`REDORDA_RUN_EXECUTION_ENABLED=0` сохраняется до готовности общего агента и factory;
+подробный протокол включения и входа — в [API-контракте](docs/api-contract.md).
 
 - Приложение: http://localhost:5173
 - API: http://localhost:8000/api/v1/health/
@@ -54,11 +69,28 @@ make migrate
 
 ```bash
 cp .env.example .env
+# Задайте POSTGRES_PASSWORD в .env: случайная строка без спецсимволов URL.
+# Например, значение можно получить через: openssl rand -hex 24
 docker compose up --build -d
 docker compose exec backend python backend/manage.py import_participant_data --path data/participant-kit
 ```
 
-Перед импортом распакуйте ZIP предыдущей командой. Compose поднимает frontend, backend, PostgreSQL, Redis и worker; интерфейс также доступен на `localhost:5173`. Worker пока подготовлен для подключения расчётов на этапе 2. Compose предназначен для разработки.
+Перед импортом распакуйте ZIP предыдущей командой. Compose поднимает frontend, backend, PostgreSQL, Redis и worker; отдельный сервис
+`migrate` завершается до старта API. Интерфейс доступен на `localhost:5173`.
+Пользователь: `docker compose exec backend python backend/manage.py createsuperuser`.
+Для публичного размещения нужны HTTPS, собственный `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=0`,
+`DJANGO_ALLOWED_HOSTS` и `DJANGO_CSRF_TRUSTED_ORIGINS`. Порт БД и Redis наружу не открыт.
+Docker не установлен на машине интеграции: запуск контейнеров локально не проверен.
+
+Дополнительные проверки:
+
+```bash
+make schema
+make check
+# Отдельная тестовая PostgreSQL БД и доступный Redis; SQLite для этой проверки не подходит.
+DATABASE_URL=postgresql://USER@localhost/redorda_test make check-integration
+make compose-check  # нужен Docker
+```
 
 ## OpenAI и проверка организаторов
 

@@ -115,3 +115,33 @@ def test_cancel_between_pilots_preserves_only_completed_pilot(run):
                    runner=CancellingRunner())
     assert Pilot.objects.filter(run=run).count() == 1
     assert not RunResult.objects.filter(run=run).exists()
+
+
+@pytest.mark.parametrize("field,value", [("max_pilots", 1), ("max_contacts", 10), ("budget", 40)])
+def test_limit_is_checked_before_another_pilot(run, field, value):
+    setattr(run, field, value)
+    run.status = "running"
+    run.save()
+
+    class OverLimitRunner(FakeRunner):
+        def act(self, env):
+            env.run_pilot(n_customers=10, channel="sms")
+            env.run_pilot(n_customers=10, channel="sms")
+
+    with pytest.raises(ValueError, match="exceed"):
+        run_engine(run, check_cancel=lambda: False, runner=OverLimitRunner())
+    assert run.pilots.count() == 1
+    assert not run.campaign_results.exists()
+
+
+def test_too_many_campaigns_are_rejected_before_saving(run):
+    run.status = "running"
+    run.save()
+
+    class OverLimitRunner(FakeRunner):
+        def act(self, env):
+            return [{"campaign_name": "Test", "target_tariff": "tariff_1", "channel": "sms"}] * 11
+
+    with pytest.raises(ExecutionUnavailable, match="1–10"):
+        run_engine(run, check_cancel=lambda: False, runner=OverLimitRunner())
+    assert not run.campaign_results.exists()

@@ -4,7 +4,8 @@ from io import StringIO
 import pytest
 from apps.campaigns.services.export import CAMPAIGN_COLUMNS
 from apps.campaigns.services.results import InvalidSavedResult, ResultNotReady, iter_submission_csv
-from test_results import saved_run
+
+from tests.test_results import saved_run
 
 
 def test_order_columns_unicode_quotes_and_repeated_download(monkeypatch):

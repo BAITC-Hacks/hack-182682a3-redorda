@@ -34,14 +34,25 @@ the public `AgentEnvironment` protocol. The context contains `dataset_path`,
 use only public organizer APIs. It must return actual pilot responses with
 `cost` and `n_customers` so each pilot can be persisted. The worker calls the
 shared `campaign_engine.Agent.act(env)`; there is no backend strategy or fake
-result. Until the public environment and shared agent are connected, execution
-ends `failed` with `engine_unavailable`.
+result. The API remains disabled until `REDORDA_RUN_EXECUTION_ENABLED=1` and a factory
+are configured. It returns 503 `engine_unavailable` without queueing. If an
+operator enables an incomplete integration, the worker ends `failed` with
+`engine_unavailable`.
 
 `CampaignResult.metrics` and `RunResult.summary` contain only data returned by
 the engine. If its current `list[dict]` output contains campaigns alone, these
 fields are empty; the backend does not invent predicted uplift or simulation
 results. The test runner is injected only by tests.
 
-PostgreSQL row locks provide the concurrency guarantee in deployment. SQLite
-tests cover sequential transitions; an integration test against PostgreSQL is
-needed for concurrent HTTP requests and a live Redis worker.
+PostgreSQL row locks provide the concurrency guarantee in deployment.
+`backend/tests/integration/` tests eight concurrent HTTP starts, duplicate claims,
+live Redis delivery, cancellation, worker exceptions, and a separate prefork
+worker. Run `make check-integration` against a dedicated PostgreSQL database.
+Successful pipeline tests inject a runner exclusively in tests; they do not
+validate the unfinished competition strategy.
+
+The adapter checks requested pilot count, contacts and public channel cost before
+calling the environment, and validates saved output before completing a run.
+Unknown final metrics remain unknown; the AI adapter must enforce the real
+environment limits. macOS spawn children initialize Celery task tracing in
+`config/celery.py`; otherwise Celery 5.6 can fail before calling the task body.

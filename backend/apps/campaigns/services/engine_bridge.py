@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from campaign_engine.agent import Agent
-from campaign_engine.contracts import Campaign
+from campaign_engine.contracts import CASE_LIMITS, CHANNEL_COSTS, Campaign
 from django.conf import settings
 from django.db import transaction
 from django.utils.module_loading import import_string
@@ -36,9 +36,10 @@ def _json(value):
 
 
 class ObservedEnvironment:
-    def __init__(self, delegate, *, before_step, on_pilot):
+    def __init__(self, delegate, *, before_step, before_pilot, on_pilot):
         self._delegate = delegate
         self._before_step = before_step
+        self._before_pilot = before_pilot
         self._on_pilot = on_pilot
 
     def __getattr__(self, name):
@@ -47,6 +48,7 @@ class ObservedEnvironment:
 
     def run_pilot(self, **kwargs):
         self._before_step()
+        self._before_pilot(kwargs)
         response = self._delegate.run_pilot(**kwargs)
         self._on_pilot(kwargs, response)
         self._before_step()
@@ -79,14 +81,36 @@ def run_engine(run, *, check_cancel, runner=None):
         if check_cancel():
             raise ExecutionCancelled()
 
+    def before_pilot(request):
+        count = request.get("n_customers", 100)
+        channel = request.get("channel")
+        if (type(count) is not int
+                or not CASE_LIMITS["pilot_min_customers"] <= count
+                <= CASE_LIMITS["pilot_max_customers"]
+                or channel not in CHANNEL_COSTS):
+            raise ValueError("Invalid pilot size or channel")
+        pilots = list(Pilot.objects.filter(run=run))
+        if len(pilots) >= min(run.max_pilots, CASE_LIMITS["pilots"]):
+            raise ValueError("Pilot count would exceed limit")
+        if sum(pilot.n_customers for pilot in pilots) + count > run.max_contacts:
+            raise ValueError("Pilot contacts would exceed limit")
+        if sum((pilot.cost for pilot in pilots), Decimal(0)) + count * CHANNEL_COSTS[channel] > (
+            run.budget
+        ):
+            raise ValueError("Pilot cost would exceed budget")
+
     def on_pilot(request, response):
         if not isinstance(response, dict):
             raise ExecutionUnavailable("Pilot response has an unsupported format")
         try:
             cost = Decimal(str(response["cost"]))
-            n_customers = int(response.get("n_customers", request["n_customers"]))
+            n_customers = response["n_customers"]
         except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
             raise ExecutionUnavailable("Pilot response lacks cost or customer count") from exc
+        if (not cost.is_finite() or cost < 0 or type(n_customers) is not int
+                or not 1 <= n_customers <= request.get("n_customers", 100)
+                or cost != n_customers * CHANNEL_COSTS[request["channel"]]):
+            raise ExecutionUnavailable("Pilot response violates the public cost/contact contract")
         with transaction.atomic():
             current = CampaignRun.objects.select_for_update().get(pk=run.pk)
             if current.status != CampaignRun.Status.RUNNING:
@@ -99,7 +123,8 @@ def run_engine(run, *, check_cancel, runner=None):
                                              "n_customers": n_customers})
 
     before_step()
-    observed = ObservedEnvironment(environment, before_step=before_step, on_pilot=on_pilot)
+    observed = ObservedEnvironment(environment, before_step=before_step,
+                                   before_pilot=before_pilot, on_pilot=on_pilot)
     try:
         output = Agent().act(observed) if runner is None else runner.act(observed)
     except NotImplementedError as exc:
@@ -110,8 +135,8 @@ def run_engine(run, *, check_cancel, runner=None):
     if isinstance(output, dict):
         campaigns = output.get("campaigns")
         summary = output.get("summary", {})
-    if not isinstance(campaigns, list) or not campaigns:
-        raise ExecutionUnavailable("Campaign engine returned no campaigns")
+    if not isinstance(campaigns, list) or not 1 <= len(campaigns) <= CASE_LIMITS["campaigns"]:
+        raise ExecutionUnavailable("Campaign engine must return 1–10 campaigns")
     for rank, item in enumerate(campaigns, start=1):
         before_step()
         if not isinstance(item, dict):
@@ -135,3 +160,6 @@ def run_engine(run, *, check_cancel, runner=None):
         RunResult.objects.create(run=run, summary=_json(summary))
         RunEvent.objects.create(run=run, kind="result_ready",
                                 payload={"campaigns": len(campaigns)})
+        from .results import validate_results
+
+        validate_results(run.pk)

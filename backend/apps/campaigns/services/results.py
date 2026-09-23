@@ -49,10 +49,10 @@ def _campaign(value):
     return campaign
 
 
-def _saved_result(run_id):
+def _saved_result(run_id, *, require_completed=True):
     Run = apps.get_model("campaigns", "CampaignRun")
     run = Run.objects.get(pk=run_id)
-    if run.status != Run.Status.COMPLETED:
+    if require_completed and run.status != Run.Status.COMPLETED:
         raise ResultNotReady(f"Run {run_id} is {run.status}")
     try:
         result = run.result
@@ -69,7 +69,16 @@ def _saved_result(run_id):
 
 def get_results(run_id) -> dict:
     """Return a stable API representation from persisted rows and summary."""
-    run, result, rows = _saved_result(run_id)
+    return _validated_results(run_id, require_completed=True)
+
+
+def validate_results(run_id):
+    """Validate saved output before the worker commits a completed status."""
+    _validated_results(run_id, require_completed=False)
+
+
+def _validated_results(run_id, *, require_completed):
+    run, result, rows = _saved_result(run_id, require_completed=require_completed)
     summary = result.summary or {}
     if not isinstance(summary, dict):
         raise InvalidSavedResult("RunResult.summary must be an object")
@@ -107,6 +116,10 @@ def get_results(run_id) -> dict:
         pilot_contacts += pilot.n_customers
     if pilot_contacts > min(run.max_contacts, CASE_LIMITS["contacts"]):
         raise InvalidSavedResult("Pilot contacts exceed limit")
+    if pilot_cost + sum(campaign_costs, Decimal(0)) > _money(run.budget, "run budget"):
+        raise InvalidSavedResult("Known spend exceeds run budget")
+    if pilot_contacts + sum(campaign_contacts) > min(run.max_contacts, CASE_LIMITS["contacts"]):
+        raise InvalidSavedResult("Known contacts exceed limit")
 
     campaign_cost = (sum(campaign_costs, Decimal("0.00"))
                      if len(campaign_costs) == len(rows) else None)

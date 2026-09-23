@@ -3,6 +3,7 @@ from itertools import chain
 from uuid import UUID
 
 from campaign_engine.contracts import CASE_LIMITS, CHANNEL_COSTS
+from config.runtime import execution_enabled
 from django.apps import apps
 from django.db import connection
 from django.http import StreamingHttpResponse
@@ -43,6 +44,12 @@ class ServiceUnavailable(APIException):
     status_code = 503
     default_detail = "Сервис расчёта сейчас недоступен."
     default_code = "execution_unavailable"
+
+
+class EngineUnavailable(APIException):
+    status_code = 503
+    default_detail = "Агент ещё не подключён. Запуск расчётов пока недоступен."
+    default_code = "engine_unavailable"
 
 
 class ResultNotAvailable(APIException):
@@ -96,7 +103,8 @@ class MetaView(APIView):
         return Response({
             "limits": CASE_LIMITS,
             "channel_costs": CHANNEL_COSTS,
-            "features": {"run_execution": False, "openai_strategy": False, "csv_export": False},
+            "features": {"run_execution": execution_enabled(), "openai_strategy": False,
+                         "csv_export": True},
         })
 
 
@@ -139,6 +147,8 @@ class RunViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrieve
             raise serializers.ValidationError({
                 "Idempotency-Key": ["Укажите ключ длиной 1–255 символов."]
             })
+        if not execution_enabled():
+            raise EngineUnavailable()
         from .services import execution
 
         try:

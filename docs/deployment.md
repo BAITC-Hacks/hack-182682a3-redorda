@@ -41,7 +41,18 @@ Actions подтверждает приём запроса; результат �
 Для проверки: `curl -fsS https://hack.1ge.kz/api/v1/health/`.
 Логи сервисов: `logs/{api,worker,web}.{out,err}.log`.
 
-Публичный proxy разрешает API только GET/HEAD/OPTIONS, пока не реализована
-авторизация записи. POST возвращает 403; локальная разработка не ограничена.
-Админка Django использует штатную авторизацию. Секреты и исходники proxy не раздаёт.
-Расчёты и экспорт остаются недоступными, пока их не реализуют разработчики.
+Публичный proxy передаёт POST в Django. При `DJANGO_DEBUG=0` все данные и операции
+API требуют активной Django-сессии; health, ready и вход остаются публичными.
+Создайте пользователя через `.venv/bin/python backend/manage.py createsuperuser`
+с загруженным `.env.production`. До подключения формы входа frontend можно войти
+через `/admin/login/` на том же origin с учётной записью staff.
+
+Worker использует prefork/concurrency=1 для поддержки soft/hard timeout.
+Для macOS spawn-процессов добавлена и проверена инициализация Celery task tracer
+в `backend/config/celery.py`; потоки больше не используются.
+Очередь `redorda`, префикс Redis `redorda:`; для распределённого ограничения входа
+задайте `CACHE_URL=redis://127.0.0.1:6379/13`. Изменения `.env.production` в этом
+репозитории автоматически не применяются; настройте недостающие переменные на сервере.
+Сохраняйте `REDORDA_RUN_EXECUTION_ENABLED=0` до готовности Agent.act и factory.
+Readiness: `curl -fsS https://hack.1ge.kz/api/v1/ready/` проверяет БД и Redis;
+готовность worker отдельно проверяется командой `celery --workdir backend -A config inspect ping`.
