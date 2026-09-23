@@ -1,4 +1,7 @@
-import type { ApiRun, CommandType, Dataset, Meta, Page, RunEventsPage, RunInput, RunResult, RunResults, Session, TeamCommand, TeamSnapshot } from './types';
+import type {
+  ApiRun, CommandType, Dataset, Meta, Page, RunEventsPage, RunInput, RunResult, RunResults, Session,
+  TeamCommand, TeamCommandInput, TeamSnapshot,
+} from './types';
 import { toEvent, toResults, toRun } from './adapters';
 
 export class ApiError extends Error {
@@ -164,11 +167,17 @@ export const api = {
   cancelRun: (id: string, signal?: AbortSignal) => request<ApiRun>(`runs/${id}/cancel/`, { method: 'POST', body: '{}', signal }).then(toRun),
   events: (id: string, after: number, signal?: AbortSignal) => request<RunEventsPage>(`runs/${id}/events/?after=${after}`, { signal }).then(page => ({ ...page, results: page.results.map(toEvent) })),
   results: (id: string, signal?: AbortSignal): Promise<RunResults> => request<RunResult>(`runs/${id}/results/`, { signal }).then(toResults),
-  team: (id: string, signal?: AbortSignal) => request<TeamSnapshot>(`runs/${id}/team/`, { signal }),
   command: (id: string, type: CommandType, snapshotId: string, parameters: Record<string, unknown>, key: string) =>
     request<TeamCommand>(`runs/${id}/commands/`, { method: 'POST', headers: { 'Idempotency-Key': key },
       body: JSON.stringify({ type, snapshot_id: snapshotId, parameters }) }),
   commandResult: (id: string, commandId: string, signal?: AbortSignal) =>
     request<TeamCommand>(`runs/${id}/commands/${commandId}/`, { signal }),
   exportRun: (id: string, signal?: AbortSignal) => request<Blob>(`runs/${id}/export/`, { signal }, true),
+  team: (id: string, signal?: AbortSignal) => request<TeamSnapshot>(`runs/${id}/team/`, { signal }),
+  submitTeamCommand: (id: string, input: TeamCommandInput, key: string, signal?: AbortSignal) =>
+    request<TeamCommand>(`runs/${id}/commands/`, {
+      method: 'POST', body: JSON.stringify(input), headers: { 'Idempotency-Key': key }, signal,
+    }),
+  teamCommand: (id: string, commandId: string, signal?: AbortSignal) =>
+    request<TeamCommand>(`runs/${id}/commands/${encodeURIComponent(commandId)}/`, { signal }),
 };

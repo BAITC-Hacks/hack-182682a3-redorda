@@ -73,6 +73,9 @@ function TeamView() {
     if (budget.trim() && (!/^\d+(?:\.\d{1,2})?$/.test(budget.trim()) || Number(budget) <= 0 || Number(budget) > 100000)) {
       setFormError('Бюджет должен быть больше 0 и не больше 100000.'); return;
     }
+    if (commandType !== 'explain' && !budget.trim() && allowedChannels.length === 0) {
+      setFormError('Укажите хотя бы одно ограничение: бюджет или доступные каналы.'); return;
+    }
     const parameters = commandType === 'explain' ? { campaign_id: campaignId.trim() }
       : commandType === 'create_plan' ? { name: planName.trim(), constraints: constraints() }
       : { constraints: constraints() };
@@ -124,7 +127,7 @@ function TeamView() {
         <button className="button primary" type="button" disabled={!available.includes(commandType) || command?.status === 'queued' || command?.status === 'running'} onClick={() => void submit()}>Отправить команду</button>
         {command && <div className="command-response" role="status"><strong>Ответ команды · {command.status === 'completed' ? 'готово' : command.status === 'failed' ? 'ошибка' : 'в работе'}</strong>
           {command.error ? <p>{command.error.message}</p> : command.result != null ? <pre className="result-json">{jsonDisplay(command.result)}</pre> : <p className="subtle">Ожидаем ответ сервера.</p>}
-          {command.type === 'create_plan' && command.status === 'completed' && typeof command.result === 'object' && command.result && !Array.isArray(command.result) && typeof command.result.run_id === 'string' && <NavLink className="button" to={`/runs/${command.result.run_id}`}>Открыть новый план</NavLink>}
+          {command.type === 'create_plan' && command.status === 'completed' && command.result && 'run_id' in command.result && typeof command.result.run_id === 'string' && <NavLink className="button" to={`/runs/${command.result.run_id}`}>Открыть новый план</NavLink>}
         </div>}
       </div>
     </>}
