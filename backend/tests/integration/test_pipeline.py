@@ -159,6 +159,12 @@ def test_import_plan_real_queue_events_results_csv(client, live_worker, monkeypa
     assert run.status == "completed", run.error_code
     assert run.pilots.count() == 1
     assert run.campaign_results.count() == 1
+    detail = client.get(url).data
+    assert detail["progress"]["percent"] == 100
+    assert detail["progress"]["spent_budget"] is None
+    assert detail["progress"]["used_contacts"] is None
+    assert detail["progress"]["completed_pilots"] == 1
+    assert detail["error"] is None
     events = client.get(url + "events/").data["results"]
     assert [event["kind"] for event in events] == [
         "queued", "running", "pilot_completed", "campaign_result", "result_ready", "completed"]
@@ -204,8 +210,14 @@ def test_live_worker_failures_and_cancellation(client, live_worker, monkeypatch,
     if mode == "cancel":
         assert run.status == "cancelled"
         assert run.pilots.count() == 1
+        detail = client.get(f"/api/v1/runs/{run.pk}/").data
+        assert detail["cancellation_requested"] is True
+        assert detail["progress"]["completed_pilots"] == 1
     else:
         assert (run.status, run.error_code) == ("failed", expected)
+        detail = client.get(f"/api/v1/runs/{run.pk}/").data
+        assert detail["error"]["code"] == expected
+        assert "Test worker failure" not in str(detail)
     assert client.get(f"/api/v1/runs/{run.pk}/export/").status_code == 409
     assert not run.campaign_results.exists()
 

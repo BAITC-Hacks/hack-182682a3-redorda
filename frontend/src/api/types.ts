@@ -1,3 +1,5 @@
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
 export interface Dataset {
   id: string;
   name: string;
@@ -12,6 +14,14 @@ export interface Dataset {
   };
 }
 
+export interface RunProgress {
+  stage: 'draft' | 'queued' | 'running' | 'finalizing' | 'completed' | 'failed' | 'cancelled';
+  percent: number;
+  spent_budget: string | null;
+  used_contacts: number | null;
+  completed_pilots: number;
+}
+
 export interface Run {
   id: string;
   name: string;
@@ -23,6 +33,53 @@ export interface Run {
   seed: number;
   strategy: 'baseline' | 'openai';
   created_at: string;
+  progress: RunProgress;
+  error: { code: string; message: string } | null;
+  cancellation_requested: boolean;
+}
+
+export interface RunEvent {
+  id: number;
+  kind: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface RunEventsPage {
+  results: RunEvent[];
+  next_after: number;
+  has_more: boolean;
+}
+
+export interface CampaignParameters {
+  campaign_name: string;
+  target_tariff: string;
+  channel: 'push' | 'sms' | 'digital_ads' | 'call';
+  filter_arpu_segment?: 'LOW' | 'MID' | 'HIGH';
+  filter_data_segment?: 'NON_USER' | 'LITE' | 'HEAVY';
+  filter_call_segment?: 'LOW' | 'MEDIUM' | 'HIGH';
+  filter_current_tariff?: string;
+}
+
+export interface RunResult {
+  run_id: string;
+  status: 'completed';
+  campaigns: {
+    rank: number;
+    parameters: CampaignParameters;
+    explanation: string | null;
+    metrics: Record<string, unknown> & { cost: string | null; n_contacts: number | null };
+  }[];
+  totals: {
+    pilot_cost: string;
+    campaign_cost: string | null;
+    total_cost: string | null;
+    pilot_contacts: number;
+    total_contacts: number | null;
+    predicted_effect: JsonValue;
+    simulator_result: JsonValue;
+  };
+  warnings: string[];
 }
 
 export interface RunInput {

@@ -36,10 +36,12 @@ def saved_run(monkeypatch, *, status="completed", metrics=None, summary=None,
 
 def test_completed_run_keeps_unknown_effects_null_and_pilot_cost(monkeypatch):
     run = saved_run(monkeypatch)
+    run.campaign_results[0].explanation = ""
     output = results.get_results(run.id)
     assert output["run_id"] == str(run.id)
     assert output["status"] == "completed"
-    assert output["campaigns"][0]["metrics"] == {}
+    assert output["campaigns"][0]["metrics"] == {"cost": None, "n_contacts": None}
+    assert output["campaigns"][0]["explanation"] is None
     assert output["totals"]["pilot_cost"] == "12.40"
     assert output["totals"]["campaign_cost"] is None
     assert output["totals"]["total_cost"] is None

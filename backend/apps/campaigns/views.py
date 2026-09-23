@@ -121,7 +121,8 @@ class CurrentDatasetView(generics.RetrieveAPIView):
 class RunViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin,
                  viewsets.GenericViewSet):
     serializer_class = RunSerializer
-    queryset = CampaignRun.objects.select_related("dataset").all()
+    queryset = CampaignRun.objects.select_related("dataset").prefetch_related(
+        "pilots", "campaign_results").all()
     lookup_value_regex = (
         "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
         "[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
@@ -147,14 +148,15 @@ class RunViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrieve
             raise serializers.ValidationError({
                 "Idempotency-Key": ["Укажите ключ длиной 1–255 символов."]
             })
-        if not execution_enabled():
-            raise EngineUnavailable()
         from .services import execution
 
         try:
-            run = execution.start_run(run.id, idempotency_key=key)
+            run = execution.start_run(run.id, idempotency_key=key,
+                                      execution_available=execution_enabled())
         except execution.ExecutionConflict as exc:
             raise RunConflict() from exc
+        except execution.EngineNotReady as exc:
+            raise EngineUnavailable() from exc
         except execution.ExecutionUnavailable as exc:
             raise ServiceUnavailable() from exc
         return Response(self.get_serializer(run).data, status=status.HTTP_202_ACCEPTED)

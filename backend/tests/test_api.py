@@ -5,7 +5,7 @@ from types import ModuleType, SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from apps.campaigns.models import CampaignRun, Dataset
+from apps.campaigns.models import CampaignResult, CampaignRun, Dataset, Pilot
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
@@ -45,6 +45,9 @@ def service_modules(monkeypatch, settings):
     class ExecutionUnavailable(Exception):
         pass
 
+    class EngineNotReady(Exception):
+        pass
+
     class ResultNotReady(Exception):
         pass
 
@@ -53,6 +56,7 @@ def service_modules(monkeypatch, settings):
 
     execution.ExecutionConflict = ExecutionConflict
     execution.ExecutionUnavailable = ExecutionUnavailable
+    execution.EngineNotReady = EngineNotReady
     results.ResultNotReady = ResultNotReady
     results.InvalidSavedResult = InvalidSavedResult
     return execution, results
@@ -79,7 +83,56 @@ def test_create_and_retrieve_persisted_draft(dataset, api_client):
     retrieved = client.get(f"/api/v1/runs/{run.id}/")
     assert retrieved.data["dataset_id"] == str(dataset.id)
     assert retrieved.data["budget"] == "50000.50"
+    assert retrieved.data["progress"] == {
+        "stage": "draft", "percent": 0, "spent_budget": "0.00",
+        "used_contacts": 0, "completed_pilots": 0,
+    }
+    assert retrieved.data["error"] is None
+    assert retrieved.data["cancellation_requested"] is False
     assert client.get("/api/v1/runs/").data["count"] == 1
+
+
+def test_run_detail_reports_saved_progress_and_safe_failure(dataset, api_client):
+    run = CampaignRun.objects.create(name="Plan", dataset=dataset, max_pilots=2,
+                                     status="running", started_at=datetime.now(timezone.utc))
+    Pilot.objects.create(run=run, sequence=1, request={}, response={},
+                         cost=Decimal("40.00"), n_customers=10)
+    url = f"/api/v1/runs/{run.id}/"
+    running = api_client.get(url).data
+    assert running["progress"] == {
+        "stage": "running", "percent": 47, "spent_budget": "40.00",
+        "used_contacts": 10, "completed_pilots": 1,
+    }
+    assert running["error"] is None
+    campaign = CampaignResult.objects.create(
+        run=run, rank=1, campaign={"campaign_name": "Plan", "target_tariff": "tariff_1",
+                                   "channel": "sms"},
+        metrics={"cost": "12.50", "n_contacts": 25}, explanation="Observed result")
+    finalizing = api_client.get(url).data["progress"]
+    assert finalizing["stage"] == "finalizing" and finalizing["percent"] == 90
+    assert (finalizing["spent_budget"], finalizing["used_contacts"]) == ("52.50", 35)
+    campaign.metrics = {}
+    campaign.save(update_fields=["metrics"])
+    unknown = api_client.get(url).data["progress"]
+    assert unknown["spent_budget"] is None and unknown["used_contacts"] is None
+    campaign.metrics = {"cost": "12.50", "n_contacts": 25}
+    campaign.save(update_fields=["metrics"])
+    run.cancel_requested = True
+    run.save(update_fields=["cancel_requested"])
+    assert api_client.get(url).data["cancellation_requested"] is True
+    run.status = "failed"
+    run.error_code = "execution_failed"
+    run.error_message = "private key and internal traceback"
+    run.save(update_fields=["status", "error_code", "error_message"])
+    failed = api_client.get(url).data
+    assert failed["error"]["code"] == "execution_failed"
+    assert "private key" not in str(failed)
+    assert failed["progress"]["percent"] == 90
+    run.status = "completed"
+    run.save(update_fields=["status"])
+    completed = api_client.get(url).data
+    assert completed["progress"]["percent"] == 100
+    assert completed["error"] is None
 
 
 @pytest.mark.parametrize("field,value", [
@@ -121,8 +174,8 @@ def test_start_requires_key_and_reuses_same_service_result(dataset, api_client, 
     run = CampaignRun.objects.create(name="Plan", dataset=dataset)
     seen = []
 
-    def start_run(run_id, *, idempotency_key):
-        seen.append((run_id, idempotency_key))
+    def start_run(run_id, *, idempotency_key, execution_available):
+        seen.append((run_id, idempotency_key, execution_available))
         run.status = "queued"
         return run
 
@@ -135,7 +188,23 @@ def test_start_requires_key_and_reuses_same_service_result(dataset, api_client, 
         response = api_client.post(url, HTTP_IDEMPOTENCY_KEY="same-key")
         assert response.status_code == 202
         assert response.data["status"] == "queued"
-    assert seen == [(run.id, "same-key"), (run.id, "same-key")]
+    assert seen == [(run.id, "same-key", True), (run.id, "same-key", True)]
+
+
+def test_same_key_http_retry_survives_execution_flag_change(dataset, api_client, settings,
+                                                              monkeypatch):
+    settings.REDORDA_RUN_EXECUTION_ENABLED = True
+    settings.REDORDA_ENVIRONMENT_FACTORY = "tests.only.factory"
+    monkeypatch.setattr("apps.campaigns.services.execution._publish", lambda *_: None)
+    run = CampaignRun.objects.create(name="Plan", dataset=dataset)
+    url = f"/api/v1/runs/{run.id}/start/"
+    first = api_client.post(url, HTTP_IDEMPOTENCY_KEY="same-key")
+    assert first.status_code == 202
+    settings.REDORDA_RUN_EXECUTION_ENABLED = False
+    retry = api_client.post(url, HTTP_IDEMPOTENCY_KEY="same-key")
+    assert retry.status_code == 202
+    assert retry.data["status"] == "queued"
+    assert api_client.post(url, HTTP_IDEMPOTENCY_KEY="different").status_code == 409
 
 
 def test_start_conflict_unavailable_and_missing_run(dataset, api_client, service_modules):

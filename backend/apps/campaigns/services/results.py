@@ -87,9 +87,11 @@ def _validated_results(run_id, *, require_completed):
     campaign_contacts = []
     for row in rows:
         campaign = _campaign(row.campaign)
-        metrics = row.metrics or {}
+        metrics = row.metrics if row.metrics is not None else {}
         if not isinstance(metrics, dict):
             raise InvalidSavedResult("Campaign metrics must be an object")
+        metrics = {**metrics, "cost": metrics.get("cost"),
+                   "n_contacts": metrics.get("n_contacts")}
         cost = _money(metrics.get("cost"), "campaign cost")
         if cost is not None:
             campaign_costs.append(cost)
@@ -101,7 +103,7 @@ def _validated_results(run_id, *, require_completed):
                 raise InvalidSavedResult("Invalid campaign n_contacts")
             campaign_contacts.append(contacts)
         campaigns.append({"rank": row.rank, "parameters": campaign,
-                          "explanation": row.explanation, "metrics": metrics})
+                          "explanation": row.explanation or None, "metrics": metrics})
 
     pilots = list(run.pilots.all().order_by("sequence"))
     if len(pilots) > min(run.max_pilots, CASE_LIMITS["pilots"]):
@@ -140,6 +142,8 @@ def _validated_results(run_id, *, require_completed):
         warnings.append("Campaign costs are incomplete; total spend is unknown.")
     if total_contacts is None:
         warnings.append("Campaign contact counts are incomplete; total contacts are unknown.")
+    if any(campaign["explanation"] is None for campaign in campaigns):
+        warnings.append("Explanations are missing for some campaigns.")
     predicted = summary.get("predicted_effect")
     simulator = summary.get("simulator_result")
     if predicted is None:

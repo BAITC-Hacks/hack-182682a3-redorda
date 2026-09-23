@@ -9,6 +9,7 @@ if not hasattr(models, "RunEvent"):
 from apps.campaigns.models import CampaignResult, CampaignRun, Dataset, Pilot, RunEvent, RunResult
 from apps.campaigns.services.engine_bridge import ExecutionCancelled, run_engine
 from apps.campaigns.services.execution import (
+    EngineNotReady,
     ExecutionConflict,
     ExecutionUnavailable,
     begin_run,
@@ -42,6 +43,20 @@ def test_start_is_idempotent_and_published_once(run, monkeypatch):
         start_run(run.pk, idempotency_key="different")
 
 
+def test_disabled_engine_still_allows_same_key_retry(run, monkeypatch):
+    published = []
+    monkeypatch.setattr("apps.campaigns.services.execution._publish",
+                        lambda run_id, task_id: published.append((run_id, task_id)))
+    with pytest.raises(EngineNotReady):
+        start_run(run.pk, idempotency_key="one", execution_available=False)
+    run.refresh_from_db()
+    assert run.status == "draft" and not published
+    first = start_run(run.pk, idempotency_key="one")
+    retry = start_run(run.pk, idempotency_key="one", execution_available=False)
+    assert retry.task_id == first.task_id and retry.status == "queued"
+    assert len(published) == 1
+
+
 def test_unavailable_broker_is_terminal_and_late_delivery_is_ignored(run, monkeypatch):
     monkeypatch.setattr("apps.campaigns.tasks.expire_run.apply_async", lambda **kwargs: None)
 
@@ -71,7 +86,8 @@ def test_running_cancel_is_cooperative_and_terminal_is_immutable(run, monkeypatc
     run = start_run(run.pk, idempotency_key="one")
     assert begin_run(run.pk, run.task_id).status == "running"
     assert begin_run(run.pk, run.task_id) is None
-    request_cancel(run.pk)
+    requested = request_cancel(run.pk)
+    assert requested.status == "running" and requested.cancel_requested
     assert cancellation_requested(run.pk, run.task_id)
     assert finish_run(run.pk, run.task_id, "cancelled").status == "cancelled"
     assert finish_run(run.pk, run.task_id, "failed", "late").status == "cancelled"
@@ -98,6 +114,9 @@ def test_pilots_and_real_agent_output_are_saved_incrementally(run):
     assert (pilot.sequence, pilot.cost, pilot.n_customers) == (1, Decimal("40.00"), 10)
     assert CampaignResult.objects.get(run=run).campaign["target_tariff"] == "tariff_1"
     assert RunResult.objects.get(run=run).summary == {}
+    pilot_event = RunEvent.objects.get(run=run, kind="pilot_completed")
+    assert pilot_event.payload == {"sequence": 1, "cost": "40.00", "n_customers": 10,
+                                   "requested_customers": 10, "channel": "sms"}
     assert list(RunEvent.objects.values_list("kind", flat=True)) == [
         "pilot_completed", "campaign_result", "result_ready",
     ]

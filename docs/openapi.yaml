@@ -609,6 +609,7 @@ components:
           additionalProperties: {}
         explanation:
           type: string
+          nullable: true
         metrics:
           type: object
           additionalProperties: {}
@@ -837,11 +838,26 @@ components:
           type: string
           format: date-time
           readOnly: true
+        progress:
+          allOf:
+          - $ref: '#/components/schemas/RunProgress'
+          readOnly: true
+        error:
+          allOf:
+          - $ref: '#/components/schemas/RunFailure'
+          nullable: true
+          readOnly: true
+        cancellation_requested:
+          type: boolean
+          readOnly: true
       required:
+      - cancellation_requested
       - created_at
       - dataset_id
+      - error
       - id
       - name
+      - progress
       - status
     RunEvent:
       type: object
@@ -874,6 +890,39 @@ components:
       - has_more
       - next_after
       - results
+    RunFailure:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required:
+      - code
+      - message
+    RunProgress:
+      type: object
+      properties:
+        stage:
+          type: string
+        percent:
+          type: integer
+          maximum: 100
+          minimum: 0
+        spent_budget:
+          type: string
+          nullable: true
+        used_contacts:
+          type: integer
+          nullable: true
+        completed_pilots:
+          type: integer
+      required:
+      - completed_pilots
+      - percent
+      - spent_budget
+      - stage
+      - used_contacts
     RunResult:
       type: object
       properties:
