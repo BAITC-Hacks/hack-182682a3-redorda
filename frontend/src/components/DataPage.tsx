@@ -86,7 +86,6 @@ export default function DataPage({ dataset, onImported }: { dataset: Dataset | n
   const successHeading = useRef<HTMLHeadingElement>(null);
   const mounted = useRef(true);
   const busyRef = useRef(false);
-  const requestController = useRef<AbortController | null>(null);
   const dragDepth = useRef(0);
   const busy = ['preparing', 'uploading', 'processing'].includes(phase);
   const totalSize = files.reduce((sum, file) => sum + file.size, 0);
@@ -94,7 +93,7 @@ export default function DataPage({ dataset, onImported }: { dataset: Dataset | n
 
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; requestController.current?.abort(); };
+    return () => { mounted.current = false; };
   }, []);
   useEffect(() => { if (phase === 'success') successHeading.current?.focus(); }, [phase]);
 
@@ -136,7 +135,9 @@ export default function DataPage({ dataset, onImported }: { dataset: Dataset | n
     setMode(selectedMode); setPhase(selectedMode === 'demo' ? 'processing' : 'preparing');
     setPercent(null); setRequestError(null); setValidationErrors([]); setDragging(false);
     const controller = new AbortController();
-    requestController.current = controller;
+    // A route change cannot cancel a mutation that the server may already have committed.
+    // Keep its response connected to App; only the deadline can stop waiting for it.
+    const timeout = window.setTimeout(() => controller.abort(), 5 * 60 * 1000);
     try {
       const imported = selectedMode === 'demo' ? await api.importDemo(controller.signal)
         : await api.importDataset(files, progress => {
@@ -144,13 +145,13 @@ export default function DataPage({ dataset, onImported }: { dataset: Dataset | n
           setPhase(progress.phase);
           if (progress.phase === 'uploading') setPercent(progress.percent);
         }, controller.signal);
-      if (!mounted.current) return;
-      onImported(imported); setPhase('success');
+      onImported(imported);
+      if (mounted.current) setPhase('success');
     } catch (error) {
       if (mounted.current) { setRequestError(error); setPhase('error'); }
     } finally {
       busyRef.current = false;
-      requestController.current = null;
+      window.clearTimeout(timeout);
     }
   }
 
