@@ -1,6 +1,10 @@
 # AI-движок: интеграция и запуск
 
-`Agent().act(env)` и backend используют общий Python-движок. Подключение HTTP start/events/results/cancel, Celery и кнопки запуска в UI ещё не выполнено.
+`Agent().act(env)` и backend используют общий Python-движок `run_campaigns`.
+В репозитории подключены HTTP start/events/results/cancel, Celery и интерфейс
+запуска, пилотов, результатов и CSV. Для работы на конкретном сервере требуется
+обновление кода, импорт данных и включение конфигурации по
+[deployment.md](../deployment.md); сам факт реализации не подтверждает обновление сервера.
 
 ## Runner
 
@@ -31,7 +35,15 @@ payload = result.to_dict()
 
 Вызывающий код создаёт новую среду с нужным seed и пустой `pilot_history`. `dataset.source_dir` — абсолютный путь к датасету. `save_event(event)` сохраняет события, `cancel_requested() -> bool` сообщает об отмене.
 
-`EngineOptions` задаёт внутренние настройки вычислений. Политики: `adaptive` по умолчанию, `fixed_100`, `fixed_200`, `wide_100` и экспериментальная `evolve`. Стандартный бюджет времени — 240 секунд, пилотный охват — до 2 000 контактов. HTTP-схема по-прежнему принимает только `strategy="baseline"`; режим `openai` доступен через runner.
+`EngineOptions` задаёт внутренние настройки вычислений. Политики: `adaptive` по умолчанию, `fixed_100`, `fixed_200`, `wide_100` и экспериментальная `evolve`. Стандартный бюджет времени — 240 секунд, пилотный охват — до 2 000 контактов. HTTP-схема принимает `strategy="baseline" | "openai"`. Это выбор источника гипотез, а не политики пилотирования; внутренние `EngineOptions` через HTTP не настраиваются.
+
+Backend в `apps.campaigns.services.engine_bridge.run_engine` создаёт `RunConfig`
+из сохранённых `budget`, `max_contacts`, `max_pilots`, `seed`, `strategy`, загружает
+историю из `Dataset.source_dir` и передаёт observer/отмену. Factory
+`apps.campaigns.services.participant_environment.create_environment` вызывает
+публичный `make_mock_env(seed)` полного пакета по этому пути. Возвращается свежая
+среда со стандартными исходными лимитами; меньшие ограничения веб-плана соблюдает
+runner. Factory проверяет соответствие профиля dataset, тарифы, каналы и счётчики.
 
 ## Результат и события
 
@@ -47,7 +59,18 @@ payload = result.to_dict()
 | `metadata` | Версия движка, seed, настройки, источник гипотез и длительность |
 | `events` | Журнал событий запуска |
 
-Прогноз движка и результат симуляции сохраняются отдельно: результат evaluator добавляет backend или слой оценки. Нижний хвост прогноза учитывает неопределённость эффекта и усредняет неизвестные пилотные подвыборки. Это неполная оценка риска; доходность не гарантируется.
+Прогноз движка и результат симуляции сохраняются отдельно. Текущий веб-пайплайн
+сохраняет прогноз и `simulator_result=null`; отдельная итоговая оценка симулятора
+в нём не выполняется. Нижний хвост прогноза учитывает неопределённость эффекта и
+усредняет неизвестные пилотные подвыборки. Это неполная оценка риска, а не
+доверительный интервал.
+
+HTTP `results/` возвращает кампании с `metrics.n_contacts`, `metrics.cost`
+(decimal-строка) и `metrics.estimated_incremental_net`. Общий прогноз в
+`totals.predicted_effect` содержит `source="posterior_forecast_not_official_score"`,
+`net_arpu_gain_mean`, `lower_tail_mean_10`, `objective`. Неизвестные показатели
+исторических запусков остаются `null`. Полные формы ответов описаны в
+[api-contract.md](../api-contract.md) и [backend-api.md](../backend-api.md).
 
 Формат события:
 
@@ -55,7 +78,21 @@ payload = result.to_dict()
 {"sequence": 1, "type": "run_started", "data": {}}
 ```
 
-Типы: `run_started`, `candidates_ready`, `hypotheses_ready`, `fallback_used`, `pilot_started`, `pilot_completed`, `pilot_failed`, `portfolio_updated`, `run_completed`, `run_cancelled`, `run_failed`. `sequence` возрастает внутри запуска. Backend назначает постоянный ID для параметра API `after`, timestamp и run ID.
+Типы: `run_started`, `candidates_ready`, `hypotheses_ready`, `fallback_used`, `pilot_started`, `pilot_completed`, `pilot_failed`, `portfolio_updated`, `run_completed`, `run_cancelled`, `run_failed`. `sequence` возрастает внутри вызова runner.
+
+Backend выдаёт события как `{id, kind, payload, created_at}` с постоянным ID для
+параметра `after`. `pilot_completed` создаётся один раз при сохранении ответа
+среды: payload содержит номер, канал, запрос, публичное наблюдение и фактические
+ресурсы. Последующий одноимённый callback runner преобразуется в новое событие
+`pilot_estimate_updated` с `{sequence, posterior}`. Старые записи не меняются.
+События очереди и сохранения результатов дополняют журнал. `run_completed`
+означает готовность портфеля движка; UI завершает ожидание по `Run.status`, после
+финального сохранения и проверки результатов backend.
+
+Frontend использует Django-сессию и CSRF, один ключ запуска на run ID, опрос
+каждые две секунды и дедупликацию событий по ID. После сетевой ошибки данные
+сохраняются, повторный запрос выполняется вручную. CSV читается из сохранённого
+результата; расчёт не повторяется.
 
 ## Выполнение, отмена и восстановление
 
@@ -71,6 +108,14 @@ payload = result.to_dict()
 `RunConfig(strategy="openai")` включает один запрос гипотез через Responses API. На вход поступают агрегаты; runner проверяет тарифы и аудитории предложений. Оценки эффекта, пилоты, расходы и портфель вычисляются кодом. При ошибке провайдера или непригодном ответе runner продолжает расчётную стратегию и записывает `fallback_used`.
 
 Настройки в серверном `.env`: `OPENAI_API_KEY`, `OPENAI_MODEL` (по умолчанию `gpt-6-sol`), `OPENAI_REASONING_EFFORT`, `OPENAI_TIMEOUT_SECONDS`. Timeout запроса ограничен 30 секундами и остатком времени запуска. `PlanningUnavailable.code` и `.http_status` позволяют различать ошибки конфигурации, соединения, доступа, лимитов и формата ответа.
+
+Для Mac mini используется серверный `.env.production`, для Compose — `.env`.
+Настройки должны совпадать у API и worker. `meta.features.run_execution` требует
+флага `REDORDA_RUN_EXECUTION_ENABLED=1` и пути factory; `openai_strategy` дополнительно
+требует непустого серверного ключа. Флаг не доказывает действительность ключа или
+доступность модели. UI предлагает OpenAI только при этом флаге, а ошибки во время
+запроса приводят к fallback с видимым уведомлением. Backend не принимает API-ключ
+в теле запроса, и frontend его не хранит.
 
 Проверка API сохраняет предложения в `artifacts/openai_hypotheses_replay.json`:
 

@@ -138,6 +138,7 @@ def test_run_detail_reports_saved_progress_and_safe_failure(dataset, api_client)
 @pytest.mark.parametrize("field,value", [
     ("budget", "100000.01"), ("budget", "0"), ("max_contacts", 15001),
     ("max_pilots", 21), ("max_pilots", 0), ("seed", -1), ("strategy", "openai"),
+    ("strategy", "unknown"),
 ])
 def test_invalid_run_does_not_get_persisted(dataset, api_client, field, value):
     response = api_client.post("/api/v1/runs/", {"name": "Invalid", field: value}, format="json")
@@ -150,6 +151,51 @@ def test_metadata_does_not_advertise_unimplemented_features(api_client):
     response = api_client.get("/api/v1/meta/")
     assert response.data["features"]["run_execution"] is False
     assert response.data["limits"]["contacts"] == 15000
+
+
+@pytest.mark.parametrize("execution,key,available", [
+    (False, "test-key", False), (True, "", False), (True, "   ", False),
+    (True, "test-key", True),
+])
+def test_openai_capability_and_create_use_server_configuration(
+        dataset, api_client, settings, monkeypatch, execution, key, available):
+    settings.REDORDA_RUN_EXECUTION_ENABLED = execution
+    settings.REDORDA_ENVIRONMENT_FACTORY = "tests.only.factory"
+    monkeypatch.setenv("OPENAI_API_KEY", key)
+    metadata = api_client.get("/api/v1/meta/").data
+    assert metadata["features"]["openai_strategy"] is available
+    assert "test-key" not in str(metadata)
+    response = api_client.post("/api/v1/runs/", {"name": "OpenAI", "strategy": "openai"},
+                               format="json")
+    assert response.status_code == (201 if available else 400)
+    if available:
+        assert CampaignRun.objects.get(pk=response.data["id"]).strategy == "openai"
+    else:
+        assert "strategy" in response.data["error"]["fields"]
+        assert not CampaignRun.objects.exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_openai_start_retry_survives_missing_key_but_new_start_does_not(
+        dataset, api_client, settings, monkeypatch):
+    settings.REDORDA_RUN_EXECUTION_ENABLED = True
+    settings.REDORDA_ENVIRONMENT_FACTORY = "tests.only.factory"
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    published = []
+    monkeypatch.setattr("apps.campaigns.services.execution._publish",
+                        lambda *args: published.append(args))
+    run = CampaignRun.objects.create(name="OpenAI", dataset=dataset, strategy="openai")
+    url = f"/api/v1/runs/{run.id}/start/"
+    assert api_client.post(url, HTTP_IDEMPOTENCY_KEY="same-key").status_code == 202
+    monkeypatch.delenv("OPENAI_API_KEY")
+    assert api_client.post(url, HTTP_IDEMPOTENCY_KEY="same-key").status_code == 202
+    assert len(published) == 1
+    another = CampaignRun.objects.create(name="New", dataset=dataset, strategy="openai")
+    response = api_client.post(f"/api/v1/runs/{another.id}/start/", HTTP_IDEMPOTENCY_KEY="new")
+    assert response.status_code == 503
+    assert response.data["error"]["code"] == "openai_unavailable"
+    another.refresh_from_db()
+    assert another.status == "draft" and len(published) == 1
 
 
 def test_health_remains_public():

@@ -1,11 +1,12 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { NavLink, Route, Routes, useNavigate } from 'react-router-dom';
 import { ArrowRight, ChartNoAxesCombined, CircleDot, Database, FlaskConical, Layers,
   Plus, RefreshCw, Signal, Wallet, Users, ChevronRight } from 'lucide-react';
-import { api, ApiError } from './api/client';
-import type { Dataset as DatasetType, Meta, Page, Run } from './api/types';
+import { api, ApiError, onAuthenticationRequired } from './api/client';
+import type { Dataset as DatasetType, Meta, Page, Run, Session } from './api/types';
 import CountUp from './components/react-bits/CountUp';
 import SpotlightCard from './components/react-bits/SpotlightCard';
+import RunDetail from './components/RunDetail';
 
 const number = (value: number | string) => new Intl.NumberFormat('ru-RU', {
   maximumFractionDigits: 0,
@@ -89,14 +90,18 @@ function NewRun({ dataset, meta }: { dataset: DatasetType | null; meta: Meta }) 
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const pending = useRef(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setBusy(true); setError(null);
+    event.preventDefault();
+    if (pending.current) return;
+    pending.current = true; setBusy(true); setError(null);
     const values = new FormData(event.currentTarget);
     try {
       const run = await api.createRun({ name: String(values.get('name')), budget: String(values.get('budget')),
-        max_contacts: Number(values.get('contacts')), max_pilots: Number(values.get('pilots')), seed: 42, strategy: 'baseline' });
+        max_contacts: Number(values.get('contacts')), max_pilots: Number(values.get('pilots')),
+        seed: Number(values.get('seed')), strategy: meta.features.openai_strategy && values.get('strategy') === 'openai' ? 'openai' : 'baseline' });
       navigate(`/runs/${run.id}`);
-    } catch (e) { setError(e); } finally { setBusy(false); }
+    } catch (e) { setError(e); } finally { pending.current = false; setBusy(false); }
   }
   return <><span className="eyebrow">НОВЫЙ ЭКСПЕРИМЕНТ</span><h1>Подготовьте план</h1><p className="intro">Определите ресурсы, которые агент сможет использовать для поиска кампаний.</p>
     {!dataset ? <div className="notice">Сначала импортируйте набор данных Beeline.</div> : <form className="panel run-form" onSubmit={submit}>
@@ -104,6 +109,8 @@ function NewRun({ dataset, meta }: { dataset: DatasetType | null; meta: Meta }) 
       <div className="form-grid"><label>Бюджет, у. е.<input name="budget" type="number" step="0.01" min="0.01" max={meta.limits.budget} defaultValue={meta.limits.budget} required /></label>
       <label>Максимум контактов<input name="contacts" type="number" min="1" max={meta.limits.contacts} defaultValue={meta.limits.contacts} required /></label></div>
       <label>Количество пилотов<input name="pilots" type="number" min="1" max={meta.limits.pilots} defaultValue={meta.limits.pilots} required /></label>
+      {meta.features.openai_strategy && <label>Способ поиска гипотез<select name="strategy" defaultValue="baseline"><option value="baseline">Расчётная стратегия</option><option value="openai">OpenAI + расчётная стратегия</option></select><small className="field-help">OpenAI предлагает гипотезы; пилоты и распределение бюджета рассчитывает движок.</small></label>}
+      <label>Seed для повторяемости<input name="seed" type="number" step="1" min="0" max="2147483647" defaultValue="42" required /></label>
       <p className="subtle">Бюджет и контакты включают предварительные эксперименты.</p>
       {error !== null && <><ErrorMessage error={error} />{error instanceof ApiError && Object.keys(error.fields).length > 0 && <ul className="field-errors">{Object.entries(error.fields).map(([key, value]) => <li key={key}>{key}: {String(value)}</li>)}</ul>}</>}
       <button className="button primary" disabled={busy}>{busy ? 'Сохраняем…' : 'Сохранить план'}<ArrowRight size={17} /></button>
@@ -111,19 +118,25 @@ function NewRun({ dataset, meta }: { dataset: DatasetType | null; meta: Meta }) 
   </>;
 }
 
-function RunDetail() {
-  const { id } = useParams();
-  const [run, setRun] = useState<Run | null>(null);
+function Login({ onLogin }: { onLogin: (session: Session) => void }) {
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  useEffect(() => { let active = true; setRun(null); setError(null);
-    api.run(id!).then(value => { if (active) setRun(value); }).catch(e => { if (active) setError(e); });
-    return () => { active = false; };
-  }, [id]);
-  if (error) return <ErrorMessage error={error} />;
-  if (!run) return <p role="status">Загружаем план…</p>;
-  return <><NavLink className="back-link" to="/runs">← Все планы</NavLink><div className="section-heading"><h1>{run.name}</h1><span className="badge">{statusLabels[run.status]}</span></div>
-    <div className="stats-grid"><Stat icon={<Wallet size={18} />} label="Бюджет" value={number(run.budget)} note="у. е. на все контакты" /><Stat icon={<Users size={18} />} label="Лимит контактов" value={number(run.max_contacts)} note="включая пилоты" /><Stat icon={<FlaskConical size={18} />} label="Пилоты" value={String(run.max_pilots)} note="максимум проверок" /></div>
-    <div className="panel"><h2>План сохранён</h2><p>Автоматический расчёт кампаний будет доступен после подключения агента. Результатов эксперимента пока нет.</p><button className="button" disabled>Запуск пока недоступен</button></div>
+  const pending = useRef(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending.current) return;
+    pending.current = true; setBusy(true); setError(null);
+    const form = event.currentTarget;
+    const values = new FormData(form);
+    try {
+      const session = await api.login(String(values.get('username')), String(values.get('password')));
+      form.reset(); onLogin(session);
+    } catch (e) { setError(e); } finally { pending.current = false; setBusy(false); }
+  }
+  return <><span className="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</span><h1>Войдите в аккаунт</h1><p className="intro">Используйте учётную запись команды для доступа к данным и запускам агента.</p>
+    <form className="panel run-form" onSubmit={submit}><label>Имя пользователя<input name="username" autoComplete="username" maxLength={150} required /></label>
+      <label>Пароль<input name="password" type="password" autoComplete="current-password" maxLength={512} required /></label>
+      {error !== null && <ErrorMessage error={error} />}<button className="button primary" disabled={busy}>{busy ? 'Входим…' : 'Войти'}<ArrowRight size={16} /></button></form>
   </>;
 }
 
@@ -132,26 +145,50 @@ export default function App() {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [retry, setRetry] = useState(0);
-  useEffect(() => { let active = true; setError(null); setMeta(null);
-    Promise.all([api.meta(), api.dataset().catch(e => {
-      if (e instanceof ApiError && e.status === 404) return null;
-      throw e;
-    })]).then(([m, d]) => { if (active) { setMeta(m); setDataset(d); } }).catch(e => { if (active) setError(e); });
-    return () => { active = false; };
+  const [session, setSession] = useState<Session | null>(null);
+  const [needsLogin, setNeedsLogin] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  useEffect(() => onAuthenticationRequired(() => {
+    setNeedsLogin(true); setSession(null); setMeta(null); setDataset(null);
+  }), []);
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true; setError(null); setMeta(null);
+    async function connect() {
+      try {
+        const currentSession = await api.session(controller.signal);
+        if (!active) return;
+        setSession(currentSession);
+        const [m, d] = await Promise.all([api.meta(controller.signal), api.dataset(controller.signal).catch(e => {
+          if (e instanceof ApiError && e.status === 404) return null;
+          throw e;
+        })]);
+        if (active) { setMeta(m); setDataset(d); setNeedsLogin(false); }
+      } catch (e) { if (active && !controller.signal.aborted) setError(e); }
+    }
+    void connect();
+    return () => { active = false; controller.abort(); };
   }, [retry]);
+  async function logout() {
+    if (loggingOut) return;
+    setLoggingOut(true); setError(null);
+    try { await api.logout(); setSession(null); setMeta(null); setDataset(null); setNeedsLogin(true); }
+    catch (e) { setError(e); } finally { setLoggingOut(false); }
+  }
   return <div className="app"><aside className="sidebar"><NavLink className="brand" to="/"><img className="brand-logo" src="/branding/janymda-logo.jpg" alt="" />Janymda</NavLink>
     <div className="workspace-label">BEELINE / HACKALEM AI</div><nav aria-label="Основная навигация">
       <NavLink to="/" end><ChartNoAxesCombined size={19} />Обзор</NavLink>
       <NavLink to="/runs"><FlaskConical size={19} />Планы кампаний</NavLink>
       <NavLink to="/data"><Database size={19} />Аудитория</NavLink>
     </nav><div className="sidebar-bottom"><span className="team-avatar">R</span><div><strong>Команда RedOrda</strong><small>Рабочее пространство</small></div></div></aside>
-    <div className="main-shell"><header><span>Маркетинговая аналитика</span><div className="connection"><i className={meta ? 'connected' : ''} />{meta ? 'Сервис доступен' : error ? 'Нет соединения' : 'Подключение…'}</div></header>
-      <main>{error ? <><ErrorMessage error={error} /><button className="button" onClick={() => setRetry(n => n + 1)}><RefreshCw size={16} />Повторить</button></> : !meta ? <p role="status">Подключаемся к сервису…</p> : <Routes>
+    <div className="main-shell"><header><span>Маркетинговая аналитика</span><div className="header-account"><div className="connection"><i className={meta ? 'connected' : ''} />{needsLogin ? 'Вход в аккаунт' : meta ? 'Сервис доступен' : error ? 'Нет соединения' : 'Подключение…'}</div>
+      {session?.authenticated && <><span className="account-name">{session.user?.username}</span><button className="logout-button" onClick={() => void logout()} disabled={loggingOut}>{loggingOut ? 'Выходим…' : 'Выйти'}</button></>}</div></header>
+      <main>{needsLogin ? <Login onLogin={value => { setSession(value); setNeedsLogin(false); setRetry(n => n + 1); }} /> : error ? <><ErrorMessage error={error} /><button className="button" onClick={() => setRetry(n => n + 1)}><RefreshCw size={16} />Повторить</button></> : !meta ? <p role="status">Подключаемся к сервису…</p> : <Routes>
         <Route path="/" element={<Overview dataset={dataset} meta={meta} />} />
         <Route path="/data" element={<DataPage dataset={dataset} />} />
         <Route path="/runs" element={<RunsPage />} />
         <Route path="/runs/new" element={<NewRun dataset={dataset} meta={meta} />} />
-        <Route path="/runs/:id" element={<RunDetail />} />
+        <Route path="/runs/:id" element={<RunDetail meta={meta} />} />
         <Route path="*" element={<><h1>Страница не найдена</h1><NavLink to="/">На главную</NavLink></>} />
       </Routes>}</main><footer>RedOrda © 2026 <span>HackAlem AI · Beeline Tariff Marketing Campaigns</span></footer>
     </div></div>;

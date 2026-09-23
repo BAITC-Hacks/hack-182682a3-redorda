@@ -1,5 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
+from config.runtime import openai_enabled
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
@@ -52,7 +53,12 @@ class RunSerializer(serializers.ModelSerializer):
     max_contacts = serializers.IntegerField(min_value=1, max_value=15000, default=15000)
     max_pilots = serializers.IntegerField(min_value=1, max_value=20, default=20)
     seed = serializers.IntegerField(min_value=0, max_value=2**31 - 1, default=42)
-    strategy = serializers.ChoiceField(choices=["baseline"], default="baseline")
+    strategy = serializers.ChoiceField(choices=["baseline", "openai"], default="baseline")
+
+    def validate_strategy(self, value):
+        if value == "openai" and not openai_enabled():
+            raise serializers.ValidationError("Режим OpenAI сейчас недоступен на сервере.")
+        return value
 
     class Meta:
         model = CampaignRun

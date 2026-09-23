@@ -20,13 +20,18 @@ class Command(BaseCommand):
         except DatasetValidationError as exc:
             raise CommandError(str(exc)) from exc
         with transaction.atomic():
-            dataset, created = Dataset.objects.get_or_create(checksum=checksum, defaults={
-                "name": "Beeline · пакет участника",
-                "source_dir": str(source),
-                "customer_count": customer_count,
-                "summary": summary,
-            })
-        self.stdout.write(self.style.SUCCESS(
-            f"{'Imported' if created else 'Already imported'} {dataset.id}: "
-            f"{customer_count} customers"
-        ))
+            dataset, created = Dataset.objects.select_for_update().get_or_create(
+                checksum=checksum,
+                defaults={
+                    "name": "Beeline · пакет участника",
+                    "source_dir": str(source),
+                    "customer_count": customer_count,
+                    "summary": summary,
+                },
+            )
+            action = "Imported" if created else "Already imported"
+            if not created and dataset.source_dir != str(source):
+                dataset.source_dir = str(source)
+                dataset.save(update_fields=["source_dir"])
+                action = "Updated source directory"
+        self.stdout.write(self.style.SUCCESS(f"{action} {dataset.id}: {customer_count} customers"))

@@ -1,4 +1,5 @@
 import csv
+from pathlib import Path
 
 import pytest
 from apps.campaigns.models import CampaignRun, Dataset
@@ -57,6 +58,52 @@ def test_import_is_idempotent_and_aggregates_actual_rows(tmp_path):
     assert dataset.customer_count == 2
     assert dataset.summary["baseline_arpu"] == "32.75"
     assert dataset.summary["segments"]["arpu_segment"] == {"LOW": 1, "MID": 1}
+
+
+def test_reimport_after_relocation_updates_existing_dataset_path_and_keeps_runs(
+    tmp_path,
+    monkeypatch,
+):
+    original = tmp_path / "original"
+    original.mkdir()
+    write_kit(original, [["1", "12.50", "tariff_1", "LOW", "LITE", "LOW"]])
+    call_command("import_participant_data", path=original)
+    dataset = Dataset.objects.get()
+    run = CampaignRun.objects.create(name="Saved before relocation", dataset=dataset)
+    checksum, summary, imported_at = dataset.checksum, dataset.summary, dataset.imported_at
+    relocated = tmp_path / "relocated"
+    original.rename(relocated)
+    monkeypatch.chdir(tmp_path)
+
+    call_command("import_participant_data", path=Path("relocated"))
+
+    dataset.refresh_from_db()
+    run.refresh_from_db()
+    assert not original.exists()
+    assert Dataset.objects.count() == 1
+    assert dataset.source_dir == str(relocated.resolve())
+    assert dataset.checksum == checksum
+    assert dataset.summary == summary
+    assert dataset.imported_at == imported_at
+    assert run.dataset_id == dataset.id
+    assert run.dataset.source_dir == str(relocated.resolve())
+
+
+def test_invalid_relocation_does_not_replace_existing_dataset_path(tmp_path):
+    original, invalid = tmp_path / "original", tmp_path / "invalid"
+    original.mkdir()
+    invalid.mkdir()
+    write_kit(original, [["1", "12.50", "tariff_1", "LOW", "LITE", "LOW"]])
+    write_kit(invalid, [["1", "NaN", "tariff_1", "LOW", "LITE", "LOW"]])
+    call_command("import_participant_data", path=original)
+    dataset = Dataset.objects.get()
+
+    with pytest.raises(CommandError):
+        call_command("import_participant_data", path=invalid)
+
+    dataset.refresh_from_db()
+    assert Dataset.objects.count() == 1
+    assert dataset.source_dir == str(original.resolve())
 
 
 @pytest.mark.parametrize("bad_row", [

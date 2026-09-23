@@ -985,8 +985,11 @@ components:
     StrategyEnum:
       enum:
       - baseline
+      - openai
       type: string
-      description: '* `baseline` - baseline'
+      description: |-
+        * `baseline` - baseline
+        * `openai` - openai
     User:
       type: object
       properties:

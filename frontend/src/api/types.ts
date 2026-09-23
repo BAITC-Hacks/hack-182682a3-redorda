@@ -1,5 +1,11 @@
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
+export interface Session {
+  authenticated: boolean;
+  user: { id: number; username: string; is_staff: boolean } | null;
+  csrf_token?: string;
+}
+
 export interface Dataset {
   id: string;
   name: string;
@@ -88,7 +94,7 @@ export interface RunInput {
   max_contacts: number;
   max_pilots: number;
   seed: number;
-  strategy: 'baseline';
+  strategy: 'baseline' | 'openai';
 }
 
 export interface Page<T> {
