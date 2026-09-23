@@ -1,4 +1,7 @@
-import type { ApiRun, Dataset, Meta, Page, RunEventsPage, RunInput, RunResult, Session } from './types';
+import type {
+  ApiRun, Dataset, Meta, Page, RunEventsPage, RunInput, RunResult, Session,
+  TeamCommand, TeamCommandInput, TeamSnapshot,
+} from './types';
 import { toEvent, toResults, toRun } from './adapters';
 
 export class ApiError extends Error {
@@ -165,4 +168,11 @@ export const api = {
   events: (id: string, after: number, signal?: AbortSignal) => request<RunEventsPage>(`runs/${id}/events/?after=${after}`, { signal }).then(page => ({ ...page, results: page.results.map(toEvent) })),
   results: (id: string, signal?: AbortSignal) => request<RunResult>(`runs/${id}/results/`, { signal }).then(toResults),
   exportRun: (id: string, signal?: AbortSignal) => request<Blob>(`runs/${id}/export/`, { signal }, true),
+  team: (id: string, signal?: AbortSignal) => request<TeamSnapshot>(`runs/${id}/team/`, { signal }),
+  submitTeamCommand: (id: string, input: TeamCommandInput, key: string, signal?: AbortSignal) =>
+    request<TeamCommand>(`runs/${id}/commands/`, {
+      method: 'POST', body: JSON.stringify(input), headers: { 'Idempotency-Key': key }, signal,
+    }),
+  teamCommand: (id: string, commandId: string, signal?: AbortSignal) =>
+    request<TeamCommand>(`runs/${id}/commands/${encodeURIComponent(commandId)}/`, { signal }),
 };
