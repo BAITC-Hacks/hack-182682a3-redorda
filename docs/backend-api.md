@@ -1,6 +1,6 @@
 # REST API Django
 
-Base URL: `/api/v1/`. JSON-запросы и ответы используют UTF-8. UUID передаются строками, время — ISO 8601. Бюджет и суммы расходов в `Run`, `metrics.cost` и `totals` — десятичные строки; прогнозные показатели и вложенные публичные наблюдения сохраняют числовой JSON-формат. API запускает расчёт через очередь; длительная работа не выполняется в HTTP-запросе.
+Base URL: `/api/v1/`. JSON-запросы и ответы используют UTF-8. UUID передаются строками, время — ISO 8601. Бюджет и суммы расходов в `Run`, `metrics.cost` и `totals` — десятичные строки; прогнозные показатели и вложенные публичные наблюдения сохраняют числовой JSON-формат. API запускает расчёт через очередь. Проверка и импорт CSV выполняются синхронно с ограничением размера.
 
 ## Сессия и CSRF
 
@@ -11,7 +11,7 @@ Base URL: `/api/v1/`. JSON-запросы и ответы используют U
 `{username, password}` и `X-CSRFToken`, возвращает сессию и новый `csrf_token`.
 `POST auth/logout/` возвращает анонимную сессию и новый токен.
 
-Клиент использует один origin и `credentials: 'include'`; все POST отправляются
+Клиент использует один origin и `credentials: 'same-origin'`; все POST отправляются
 с действующим `X-CSRFToken`. После login используется токен из его ответа.
 Неактивный пользователь или неверный пароль дают 401 `invalid_credentials`;
 нет сессии — 403 `not_authenticated`; неверный CSRF — 403 `csrf_failed` на auth POST
@@ -26,6 +26,8 @@ Base URL: `/api/v1/`. JSON-запросы и ответы используют U
 | GET | `ready/` | 200 `{status: "ok", database: true, broker: true}` | Публичная проверка БД и Redis; при недоступности — 503 и соответствующие boolean-поля. |
 | GET | `meta/` | 200 | `limits`, `channel_costs`, `features`; флаги зависят от конфигурации сервера. |
 | GET | `datasets/current/` | 200 | Текущий импортированный набор; 404 без набора. |
+| POST | `datasets/import-demo/` | 201 / 200, `Dataset` | Импорт встроенных четырёх CSV; пустое тело или `{}`. |
+| POST | `datasets/import/` | 201 / 200, `Dataset` | Четыре CSV в повторяющемся multipart-поле `files`. |
 | GET | `runs/` | 200 | `{count, next, previous, results}`; стандартная пагинация DRF, 20 элементов на страницу. |
 | POST | `runs/` | 201 | Создать черновик; 409 без набора. |
 | GET | `runs/{id}/` | 200 | Сохранённый план; 404 для неизвестного UUID. |
@@ -114,6 +116,80 @@ worker, данные или внешнюю сеть. Создание недос
 оценку симулятора. В `warnings` сохраняются ограничения прогноза и сообщения
 fallback. CSV и `results/` читают сохранённые записи, не выполняя расчёт повторно.
 
+## Живая команда и команды
+
+`GET runs/{id}/team/` возвращает согласованный snapshot. `last_event_id` — курсор:
+события до него уже включены в состояние, следующий запрос —
+`GET runs/{id}/events/?after=7`. Пример формы (значения иллюстративны):
+
+```json
+{"schema_version":1,"run_id":"00000000-0000-0000-0000-000000000001",
+ "snapshot_id":"00000000-0000-0000-0000-000000000002","last_event_id":7,
+ "tasks":[],"artifacts":[],"available_commands":["create_plan"]}
+```
+
+Задачи содержат `id`, `actor_id`, `status`, `title`, `artifact_ids`,
+`evidence_ids`. Артефакты содержат `id`, `task_id`, `type`, `title`, `data`,
+`evidence_ids`. Состав зависит от сохранённого запуска; пустые списки означают
+отсутствие подтверждённой работы, а не выполненный расчёт. `available_commands`
+формирует сервис по текущему состоянию и наличию функций движка. Сейчас
+`explain`/`compare` ещё не подключены и в списке не появляются. Поля внутреннего состояния движка, секреты,
+пути и traceback не выдаются. Неизвестный измеренный результат остаётся `null`.
+
+`POST runs/{id}/commands/` требует сессию, CSRF и `Idempotency-Key` длиной
+1–255. Тело имеет только `type`, `snapshot_id`, `parameters`:
+
+```http
+Idempotency-Key: explain-campaign-1
+X-CSRFToken: <токен сессии>
+
+{"type":"explain","snapshot_id":"00000000-0000-0000-0000-000000000002",
+ "parameters":{"campaign_id":"campaign-1"}}
+```
+
+Другие допустимые параметры:
+
+```json
+{"type":"compare","snapshot_id":"00000000-0000-0000-0000-000000000002",
+ "parameters":{"constraints":{"budget":"50000.00","allowed_channels":["sms"]}}}
+```
+
+```json
+{"type":"create_plan","snapshot_id":"00000000-0000-0000-0000-000000000002",
+ "parameters":{"name":"Меньший бюджет","constraints":{"budget":"50000.00"}}}
+```
+
+`budget` — decimal-строка от `0.01` до `100000.00`; каналы: `push`, `sms`,
+`digital_ads`, `call`. В `constraints` нужен хотя бы один параметр. Неизвестные
+поля на любом уровне, пустые значения и неверные типы дают 400.
+`snapshot_id` и ID команды — UUID. Для `create_plan` ограничение каналов пока
+не поддерживается движком: команда завершится `failed/capability_unavailable`,
+новый план не создаётся. Примеры `explain`/`compare` описывают контракт подключения
+AI; до реализации функций они также завершаются `failed/capability_unavailable`.
+
+Первый ответ — 202, повтор того же запроса с тем же ключом возвращает тот же
+объект; другой запрос с этим ключом — 409. `GET
+runs/{id}/commands/{command_id}/` возвращает его текущее состояние:
+
+```json
+{"id":"00000000-0000-0000-0000-000000000003","type":"explain","status":"queued",
+ "result":null,"error":null}
+```
+
+Статусы: `queued`, `running`, `completed`, `failed`. У `explain`/`compare`
+результат содержит сохранённый артефакт с основаниями; `create_plan` — новый
+`run_id` черновика, который запускается отдельно через `start/`.
+Проверку принадлежности команды исходному run выполняет сервис и HTTP-слой.
+Неподдерживаемые команды `pause`, `resume`, ручной пилот отклоняются с 400.
+
+Ошибки: отсутствие ключа — 400 `validation_error` с
+`fields.Idempotency-Key`; отсутствующий или чужой snapshot/команда — 404 `not_found`;
+повтор ключа с другим телом — 409 `command_conflict`; недоступный сервис —
+503 `team_unavailable`. При отказе Redis команда сохраняется с
+`failed/queue_unavailable`, при превышении времени — `failed/timeout`.
+Поздний ответ worker не перезаписывает терминальное состояние и не публикует артефакт.
+Команды работают через интегрированные сервисы `team_state`/`team_commands`.
+
 ## Ошибки
 
 Все обрабатываемые ошибки имеют вид `{ "error": { "code": "validation_error", "message": "Проверьте параметры запроса.", "fields": { "budget": ["..."] } } }`. Для ошибок состояния `fields` пустой объект. Основные коды: `validation_error` (400), `not_found` (404), `dataset_required`, `run_conflict`, `result_not_ready` (409), `engine_unavailable`, `openai_unavailable`, `execution_unavailable` (503). Внутренние подробности исключений сервисов, пути файлов и traceback не включаются в сообщения. `health/`, `ready/`, `/api/schema/` и `/api/docs/` остаются публичными.
@@ -122,3 +198,15 @@ fallback. CSV и `results/` читают сохранённые записи, н
 `make schema` обновляет `docs/openapi.yaml` с проверкой схемы. Соответствующие
 TypeScript-типы находятся в `frontend/src/api/types.ts`, в том числе
 `strategy: 'baseline' | 'openai'` в `Run` и `RunInput`.
+
+
+`meta.environment` содержит `{mode, label}` с пояснением среды. Для встроенного
+локального симулятора с проверкой SHA-256 доступность нового старта также зависит
+от наличия установленного пакета.
+
+`Run.execution_blocker` — причина недоступности расчёта для набора либо `null`.
+Четыре сырых CSV без профиля не запускаются в обеих встроенных средах; очередь не
+вызывается. Формат импорта описан в [контракте](api-contract.md#импорт-из-интерфейса).
+
+CSV-клиент передаёт `Accept: text/csv, application/json`: успешный ответ — поток CSV,
+ошибки — JSON. Один `Accept: text/csv` не проходит JSON content negotiation DRF.

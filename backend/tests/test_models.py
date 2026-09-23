@@ -56,6 +56,7 @@ def test_unique_result_keys_per_run(runs, model, fields):
 @pytest.mark.django_db(transaction=True)
 def test_migration_preserves_existing_dataset_and_run():
     executor = MigrationExecutor(connection)
+    latest = executor.loader.graph.leaf_nodes()
     old = [("campaigns", "0001_initial")]
     new = [("campaigns", "0002_campaignrun_cancel_requested_campaignrun_error_code_and_more")]
     try:
@@ -80,4 +81,4 @@ def test_migration_preserves_existing_dataset_and_run():
         assert upgraded.cancel_requested is False
         assert upgraded.task_id == ""
     finally:
-        MigrationExecutor(connection).migrate(new)
+        MigrationExecutor(connection).migrate(latest)

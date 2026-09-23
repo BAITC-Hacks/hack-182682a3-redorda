@@ -1,5 +1,3 @@
-import type { RunEvent, RunEventsPage } from './types';
-
 const startKeys = new Map<string, string>();
 
 export function startKeyForRun(id: string): string {
@@ -13,12 +11,12 @@ export function startKeyForRun(id: string): string {
   return key;
 }
 
-export function mergeEvents(previous: RunEvent[], incoming: RunEvent[]): RunEvent[] {
+export function mergeEvents<T extends { id: number }>(previous: T[], incoming: T[]): T[] {
   return [...new Map([...previous, ...incoming].map(event => [event.id, event])).values()]
     .sort((left, right) => left.id - right.id);
 }
 
-export function nextEventCursor(after: number, page: RunEventsPage): number {
+export function nextEventCursor(after: number, page: { next_after: number; has_more: boolean; results: { id: number }[] }): number {
   if (!Number.isSafeInteger(page.next_after) || page.next_after < after
     || (page.has_more && page.next_after <= after)
     || page.results.some(event => !Number.isSafeInteger(event.id)

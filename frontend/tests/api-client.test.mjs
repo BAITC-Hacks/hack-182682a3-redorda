@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import ts from 'typescript';
+import { build } from 'esbuild';
 
 async function loadSource(path) {
-  const source = await readFile(new URL(path, import.meta.url), 'utf8');
-  const { outputText } = ts.transpileModule(source, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+  const { outputFiles } = await build({
+    entryPoints: [fileURLToPath(new URL(path, import.meta.url))],
+    bundle: true, write: false, platform: 'node', format: 'esm', target: 'es2022',
   });
+  const outputText = outputFiles[0].text;
   return import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}#${crypto.randomUUID()}`);
 }
 
@@ -40,13 +41,13 @@ test('login rotates CSRF and subsequent writes include session credentials', asy
   assert.equal(calls[1].headers.get('X-CSRFToken'), 'before-login');
   assert.equal(calls[2].headers.get('X-CSRFToken'), 'after-login');
   assert.equal(JSON.parse(calls[2].body).strategy, 'openai');
-  assert.ok(calls.every(call => call.credentials === 'include'));
+  assert.ok(calls.every(call => call.credentials === 'same-origin'));
 });
 
 test('ambiguous start failure is never retried automatically', async t => {
   const { api } = await loadSource('../src/api/client.ts');
   const calls = mockFetch(t, [json({ csrf_token: 'csrf' }), new TypeError('Network interrupted')]);
-  await assert.rejects(api.startRun('run-a', 'stable-key'), /Network interrupted/);
+  await assert.rejects(api.startRun('run-a', 'stable-key'), error => error.status === 0 && /Нет связи/.test(error.message));
   assert.equal(calls.length, 2);
   assert.equal(calls[1].method, 'POST');
   assert.equal(calls[1].headers.get('Idempotency-Key'), 'stable-key');
@@ -89,7 +90,7 @@ test('CSV export preserves error responses and uses the authenticated download',
   await assert.rejects(api.exportRun('run-a'), error => error.code === 'result_not_ready');
   const csv = await api.exportRun('run-a');
   assert.equal(await csv.text(), 'campaign_name,channel\nexample,push\n');
-  assert.ok(calls.every(call => call.credentials === 'include'));
+  assert.ok(calls.every(call => call.credentials === 'same-origin'));
   assert.ok(calls.every(call => new Headers(call.headers).get('Accept').includes('application/json')));
 });
 

@@ -57,7 +57,7 @@ def read_csv(path, required):
                     raise DatasetValidationError(f"Malformed {path.name} row {row_number}")
                 yield row_number, row
     except (UnicodeError, csv.Error, OSError) as exc:
-        raise DatasetValidationError(f"Cannot read {path}: {exc}") from exc
+        raise DatasetValidationError(f"Cannot read CSV {path.name}") from exc
 
 
 def number(value, label, row_number, *, nonnegative=False):

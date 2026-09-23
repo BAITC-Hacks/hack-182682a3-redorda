@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
 
-from config.runtime import openai_enabled
+from config.runtime import dataset_execution_blocker, openai_enabled
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
@@ -22,9 +23,41 @@ class MetaSerializer(serializers.Serializer):
     limits = serializers.DictField(child=serializers.IntegerField())
     channel_costs = serializers.DictField(child=serializers.IntegerField())
     features = MetaFeaturesSerializer()
+    environment = serializers.DictField(child=serializers.CharField())
+
+
+class DatasetSummarySerializer(serializers.Serializer):
+    baseline_arpu = serializers.CharField(allow_null=True)
+    tariff_count = serializers.IntegerField()
+    synthetic = serializers.BooleanField(allow_null=True)
+    segments = serializers.DictField(child=serializers.DictField(child=serializers.IntegerField()))
+    source_kind = serializers.ChoiceField(choices=["demo", "upload"], required=False)
+    file_rows = serializers.DictField(child=serializers.IntegerField(), required=False)
+    format = serializers.ChoiceField(choices=["raw_csv"], required=False)
+    missing_current_tariff = serializers.IntegerField(required=False)
+
+
+@extend_schema_field(OpenApiTypes.BINARY)
+class DatasetCSVFileField(serializers.FileField):
+    pass
+
+
+class DatasetUploadSerializer(serializers.Serializer):
+    files = serializers.ListField(child=DatasetCSVFileField(), min_length=4, max_length=4)
+
+    def to_internal_value(self, data):
+        if set(data) - {"files"}:
+            raise serializers.ValidationError({"non_field_errors": ["Неизвестные поля запроса."]})
+        return super().to_internal_value(data)
 
 
 class DatasetSerializer(serializers.ModelSerializer):
+    summary = serializers.SerializerMethodField()
+
+    @extend_schema_field(DatasetSummarySerializer)
+    def get_summary(self, obj):
+        return obj.summary
+
     class Meta:
         model = Dataset
         fields = ["id", "name", "checksum", "customer_count", "summary", "imported_at"]
@@ -44,6 +77,7 @@ class RunFailureSerializer(serializers.Serializer):
 
 
 class RunSerializer(serializers.ModelSerializer):
+    execution_blocker = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
     error = serializers.SerializerMethodField()
     cancellation_requested = serializers.BooleanField(source="cancel_requested", read_only=True)
@@ -64,9 +98,13 @@ class RunSerializer(serializers.ModelSerializer):
         model = CampaignRun
         fields = ["id", "name", "dataset_id", "status", "budget", "max_contacts", "max_pilots",
                   "seed", "strategy", "created_at", "progress", "error",
-                  "cancellation_requested"]
+                  "cancellation_requested", "execution_blocker"]
         read_only_fields = ["id", "dataset_id", "status", "created_at", "progress", "error",
-                            "cancellation_requested"]
+                            "cancellation_requested", "execution_blocker"]
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_execution_blocker(self, run):
+        return dataset_execution_blocker(run.dataset)
 
     @extend_schema_field(RunProgressSerializer)
     def get_progress(self, run):

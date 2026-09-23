@@ -18,6 +18,7 @@ from django.utils.module_loading import import_string
 from apps.campaigns.models import CampaignResult, CampaignRun, Pilot, RunEvent, RunResult
 
 from .execution import ExecutionUnavailable
+from .team_state import persist_team_event
 
 
 class ExecutionCancelled(Exception):
@@ -75,6 +76,23 @@ def run_engine(run, *, check_cancel, runner=None):
 
     ``runner`` is the legacy test seam. Production uses the shared runner.
     """
+    constraints = run.constraints or {}
+    if not isinstance(constraints, dict):
+        raise ExecutionUnavailable("Saved constraints have an invalid format")
+    unsupported = set(constraints) - {"budget", "allowed_channels"}
+    if unsupported:
+        raise ExecutionUnavailable("Unsupported run constraint: " + ", ".join(sorted(unsupported)))
+    if "budget" in constraints:
+        try:
+            same_budget = Decimal(str(constraints["budget"])) == run.budget
+        except (InvalidOperation, TypeError, ValueError):
+            same_budget = False
+        if not same_budget:
+            raise ExecutionUnavailable("Saved budget constraint differs from the run budget")
+    if "allowed_channels" in constraints and "allowed_channels" not in RunConfig.model_fields:
+        raise ExecutionUnavailable("The campaign engine does not support allowed_channels")
+    if runner is not None and "allowed_channels" in constraints:
+        raise ExecutionUnavailable("The supplied runner does not support allowed_channels")
     context = EngineContext(Path(run.dataset.source_dir), run.budget, run.max_contacts,
                             run.max_pilots, run.seed, run.strategy)
     environment = _public_environment(context) if runner is None else runner.environment(context)
@@ -145,6 +163,9 @@ def run_engine(run, *, check_cancel, runner=None):
 
     def observe(event):
         kind, payload = event["type"], event["data"]
+        if kind in {"task_started", "task_completed", "task_failed", "task_handoff"}:
+            persist_team_event(run_id=run.pk, kind=kind, payload=_json(payload))
+            return
         if kind == "run_failed":
             payload = {"reason": "engine_failed"}
         if kind == "pilot_completed":
@@ -159,7 +180,9 @@ def run_engine(run, *, check_cancel, runner=None):
     try:
         if runner is None:
             config = RunConfig(budget=float(run.budget), max_contacts=run.max_contacts,
-                               max_pilots=run.max_pilots, seed=run.seed, strategy=run.strategy)
+                               max_pilots=run.max_pilots, seed=run.seed, strategy=run.strategy,
+                               **({"allowed_channels": constraints["allowed_channels"]}
+                                  if "allowed_channels" in constraints else {}))
             result = run_campaigns(observed, config, history=load_history(context.dataset_path),
                                    observer=observe, should_cancel=check_cancel)
             before_step()
@@ -171,7 +194,11 @@ def run_engine(run, *, check_cancel, runner=None):
             if len(details) != len(result.campaigns):
                 raise EngineFailure("Campaign metrics are incomplete")
             output = {"campaigns": [
-                {"campaign": campaign, "metrics": metrics,
+                {"campaign": campaign, "metrics": {
+                    **metrics,
+                    "predicted_effect": str(metrics["estimated_incremental_net"]),
+                    "forecast_source": result.estimates.get("source"),
+                },
                  "explanation": "Прогноз рассчитан по историческим данным и наблюдениям пилотов."}
                 for campaign, metrics in zip(result.campaigns, details, strict=True)
             ], "summary": {
@@ -185,6 +212,7 @@ def run_engine(run, *, check_cancel, runner=None):
                     "engine_version", "seed", "strategy", "options", "hypothesis_source",
                     "elapsed_seconds") if key in result.metadata},
                 "stop_reason": result.stop_reason,
+                "engine": result.to_dict(),
             }}
         else:
             output = runner.act(observed)

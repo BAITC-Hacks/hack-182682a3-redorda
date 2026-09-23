@@ -275,6 +275,94 @@ paths:
               schema:
                 $ref: '#/components/schemas/Dataset'
           description: ''
+  /api/v1/datasets/import/:
+    post:
+      operationId: v1_datasets_import_create
+      description: 'Import exactly dict_tariff.csv, traffic.csv, arpu_monthly.csv
+        and change_tariff.csv using the repeated multipart files field. Limits: 30
+        MiB per file and 50 MiB total. Existing identical bytes reactivate the dataset
+        and preserve its original source metadata.'
+      tags:
+      - v1
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DatasetUpload'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+  /api/v1/datasets/import-demo/:
+    post:
+      operationId: v1_datasets_import_demo_create
+      description: Import the four bundled demo CSVs. Send no body or an empty JSON
+        object.
+      tags:
+      - v1
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
   /api/v1/health/:
     get:
       operationId: v1_health_retrieve
@@ -369,6 +457,175 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Run'
+          description: ''
+  /api/v1/runs/{id}/commands/:
+    post:
+      operationId: v1_runs_commands_create
+      description: Команда по сохранённому snapshot. create_plan создаёт черновик
+        с новым бюджетом; explain/compare требуют функций AI-движка. Доступность —
+        в team.available_commands. allowed_channels пока не поддерживается движком.
+        После 202 опрашивайте GET команды.
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        description: Ключ длиной 1–255 символов.
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamCommandRequest'
+            examples:
+              НовыйПлан:
+                value:
+                  type: create_plan
+                  snapshot_id: 00000000-0000-0000-0000-000000000002
+                  parameters:
+                    name: Меньший бюджет
+                    constraints:
+                      budget: '50000.00'
+                summary: Новый план
+              Объяснение(послеПодключенияAI):
+                value:
+                  type: explain
+                  snapshot_id: 00000000-0000-0000-0000-000000000002
+                  parameters:
+                    campaign_id: '1'
+                summary: Объяснение (после подключения AI)
+              Сравнение(послеПодключенияAI):
+                value:
+                  type: compare
+                  snapshot_id: 00000000-0000-0000-0000-000000000002
+                  parameters:
+                    constraints:
+                      budget: '50000.00'
+                summary: Сравнение (после подключения AI)
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TeamCommandRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TeamCommandRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamCommandResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+  /api/v1/runs/{id}/commands/{command_id}/:
+    get:
+      operationId: v1_runs_commands_retrieve
+      parameters:
+      - in: path
+        name: command_id
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamCommandResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+  /api/v1/runs/{id}/team/:
+    get:
+      operationId: v1_runs_team_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamSnapshot'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
           description: ''
   /api/v1/runs/{id}/:
     get:
@@ -599,6 +856,20 @@ paths:
           description: ''
 components:
   schemas:
+    ActorIdEnum:
+      enum:
+      - lead
+      - analyst
+      - experiment
+      - finance
+      - control
+      type: string
+      description: |-
+        * `lead` - lead
+        * `analyst` - analyst
+        * `experiment` - experiment
+        * `finance` - finance
+        * `control` - control
     CampaignResult:
       type: object
       properties:
@@ -643,7 +914,10 @@ components:
           maximum: 9223372036854775807
           minimum: 0
           format: int64
-        summary: {}
+        summary:
+          allOf:
+          - $ref: '#/components/schemas/DatasetSummary'
+          readOnly: true
         imported_at:
           type: string
           format: date-time
@@ -654,6 +928,51 @@ components:
       - id
       - imported_at
       - name
+      - summary
+    DatasetSummary:
+      type: object
+      properties:
+        baseline_arpu:
+          type: string
+          nullable: true
+        tariff_count:
+          type: integer
+        synthetic:
+          type: boolean
+          nullable: true
+        segments:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: integer
+        source_kind:
+          $ref: '#/components/schemas/SourceKindEnum'
+        file_rows:
+          type: object
+          additionalProperties:
+            type: integer
+        format:
+          $ref: '#/components/schemas/FormatEnum'
+        missing_current_tariff:
+          type: integer
+      required:
+      - baseline_arpu
+      - segments
+      - synthetic
+      - tariff_count
+    DatasetUpload:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            type: string
+            format: binary
+          maxItems: 4
+          minItems: 4
+      required:
+      - files
     Error:
       type: object
       properties:
@@ -675,6 +994,11 @@ components:
       - code
       - fields
       - message
+    FormatEnum:
+      enum:
+      - raw_csv
+      type: string
+      description: '* `raw_csv` - raw_csv'
     Health:
       type: object
       properties:
@@ -711,8 +1035,13 @@ components:
             type: integer
         features:
           $ref: '#/components/schemas/MetaFeatures'
+        environment:
+          type: object
+          additionalProperties:
+            type: string
       required:
       - channel_costs
+      - environment
       - features
       - limits
     MetaFeatures:
@@ -850,11 +1179,16 @@ components:
         cancellation_requested:
           type: boolean
           readOnly: true
+        execution_blocker:
+          type: string
+          nullable: true
+          readOnly: true
       required:
       - cancellation_requested
       - created_at
       - dataset_id
       - error
+      - execution_blocker
       - id
       - name
       - progress
@@ -982,6 +1316,14 @@ components:
       required:
       - authenticated
       - user
+    SourceKindEnum:
+      enum:
+      - demo
+      - upload
+      type: string
+      description: |-
+        * `demo` - demo
+        * `upload` - upload
     StrategyEnum:
       enum:
       - baseline
@@ -990,6 +1332,164 @@ components:
       description: |-
         * `baseline` - baseline
         * `openai` - openai
+    TeamArtifact:
+      type: object
+      properties:
+        id:
+          type: string
+        task_id:
+          type: string
+        type:
+          type: string
+        title:
+          type: string
+        data: {}
+        evidence_ids:
+          type: array
+          items:
+            oneOf:
+            - type: string
+            - type: integer
+      required:
+      - data
+      - evidence_ids
+      - id
+      - task_id
+      - title
+      - type
+    TeamCommandRequest:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/TypeEnum'
+        snapshot_id:
+          type: string
+          format: uuid
+        parameters:
+          type: object
+          additionalProperties: {}
+      required:
+      - parameters
+      - snapshot_id
+      - type
+    TeamCommandResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        status:
+          $ref: '#/components/schemas/TeamCommandResponseStatusEnum'
+        result:
+          nullable: true
+        error:
+          nullable: true
+      required:
+      - error
+      - id
+      - result
+      - status
+      - type
+    TeamCommandResponseStatusEnum:
+      enum:
+      - queued
+      - running
+      - completed
+      - failed
+      type: string
+      description: |-
+        * `queued` - queued
+        * `running` - running
+        * `completed` - completed
+        * `failed` - failed
+    TeamSnapshot:
+      type: object
+      properties:
+        schema_version:
+          type: integer
+        run_id:
+          type: string
+          format: uuid
+        snapshot_id:
+          type: string
+          format: uuid
+        last_event_id:
+          type: integer
+          minimum: 0
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamTask'
+        artifacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamArtifact'
+        available_commands:
+          type: array
+          items:
+            type: string
+      required:
+      - artifacts
+      - available_commands
+      - last_event_id
+      - run_id
+      - schema_version
+      - snapshot_id
+      - tasks
+    TeamTask:
+      type: object
+      properties:
+        id:
+          type: string
+        actor_id:
+          $ref: '#/components/schemas/ActorIdEnum'
+        status:
+          $ref: '#/components/schemas/TeamTaskStatusEnum'
+        title:
+          type: string
+        artifact_ids:
+          type: array
+          items:
+            type: string
+        evidence_ids:
+          type: array
+          items:
+            oneOf:
+            - type: string
+            - type: integer
+      required:
+      - actor_id
+      - artifact_ids
+      - evidence_ids
+      - id
+      - status
+      - title
+    TeamTaskStatusEnum:
+      enum:
+      - pending
+      - running
+      - completed
+      - failed
+      - cancelled
+      type: string
+      description: |-
+        * `pending` - pending
+        * `running` - running
+        * `completed` - completed
+        * `failed` - failed
+        * `cancelled` - cancelled
+    TypeEnum:
+      enum:
+      - explain
+      - compare
+      - create_plan
+      type: string
+      description: |-
+        * `explain` - explain
+        * `compare` - compare
+        * `create_plan` - create_plan
     User:
       type: object
       properties:

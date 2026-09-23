@@ -10,7 +10,10 @@ load_dotenv(ROOT_DIR / ".env")
 DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
 REDORDA_REQUIRE_AUTH = not DEBUG or os.getenv("REDORDA_REQUIRE_AUTH", "0") == "1"
 REDORDA_RUN_EXECUTION_ENABLED = os.getenv("REDORDA_RUN_EXECUTION_ENABLED", "0") == "1"
-REDORDA_ENVIRONMENT_FACTORY = os.getenv("REDORDA_ENVIRONMENT_FACTORY", "")
+REDORDA_ENVIRONMENT_FACTORY = os.getenv("REDORDA_ENVIRONMENT_FACTORY",
+    "apps.campaigns.services.public_environment.local_simulation"
+)
+PARTICIPANT_KIT_DIR = os.getenv("PARTICIPANT_KIT_DIR", "data/participant-kit")
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "local-development-only-change-before-deployment")
 if not DEBUG and SECRET_KEY == "local-development-only-change-before-deployment":
     raise RuntimeError("Set DJANGO_SECRET_KEY before running with DJANGO_DEBUG=0")
@@ -71,6 +74,7 @@ USE_I18N = True
 USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_ROOT = Path(os.getenv("DJANGO_MEDIA_ROOT", str(BASE_DIR / "media")))
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",

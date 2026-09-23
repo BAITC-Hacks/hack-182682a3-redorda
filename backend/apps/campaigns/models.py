@@ -16,6 +16,19 @@ class Dataset(models.Model):
         ordering = ["-imported_at"]
 
 
+class Subscriber(models.Model):
+    dataset = models.ForeignKey(Dataset, on_delete=models.CASCADE, related_name="subscribers")
+    id_number = models.TextField()
+    profile = models.JSONField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["dataset", "id_number"], name="unique_subscriber_per_dataset"
+            ),
+        ]
+
+
 class CampaignRun(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Черновик"
@@ -28,6 +41,9 @@ class CampaignRun(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=120)
     dataset = models.ForeignKey(Dataset, on_delete=models.PROTECT, related_name="runs")
+    parent_run = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT,
+                                   related_name="derived_runs")
+    constraints = models.JSONField(default=dict)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT)
     budget = models.DecimalField(max_digits=10, decimal_places=2, default=100_000)
     max_contacts = models.PositiveIntegerField(default=15_000)
@@ -90,3 +106,78 @@ class RunResult(models.Model):
     run = models.OneToOneField(CampaignRun, on_delete=models.CASCADE, related_name="result")
     summary = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class TeamTask(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    run = models.ForeignKey(CampaignRun, on_delete=models.CASCADE, related_name="team_tasks")
+    task_id = models.CharField(max_length=128)
+    actor_id = models.CharField(max_length=16)
+    status = models.CharField(max_length=16, default="pending")
+    title = models.CharField(max_length=255)
+    artifact_ids = models.JSONField(default=list)
+    evidence_ids = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["run", "task_id"],
+                                               name="unique_team_task_run_id")]
+
+
+class TeamArtifact(models.Model):
+    id = models.CharField(primary_key=True, max_length=128)
+    run = models.ForeignKey(CampaignRun, on_delete=models.CASCADE, related_name="team_artifacts")
+    task = models.ForeignKey(TeamTask, on_delete=models.PROTECT, related_name="artifacts")
+    type = models.CharField(max_length=32)
+    title = models.CharField(max_length=255)
+    data = models.JSONField(default=dict)
+    evidence_ids = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if self.task_id and self.run_id != self.task.run_id:
+            raise ValueError("Artifact and task must belong to the same run")
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValueError("Team artifacts are immutable")
+        return super().save(*args, **kwargs)
+
+
+class TeamSnapshot(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    run = models.ForeignKey(CampaignRun, on_delete=models.CASCADE, related_name="team_snapshots")
+    schema_version = models.PositiveSmallIntegerField(default=1)
+    last_event_id = models.PositiveBigIntegerField(default=0)
+    public_state = models.JSONField(default=dict)
+    engine_state = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValueError("Team snapshots are immutable")
+        return super().save(*args, **kwargs)
+
+
+class TeamCommand(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    run = models.ForeignKey(CampaignRun, on_delete=models.CASCADE, related_name="team_commands")
+    snapshot = models.ForeignKey(TeamSnapshot, on_delete=models.PROTECT,
+                                 related_name="commands")
+    type = models.CharField(max_length=32)
+    parameters = models.JSONField(default=dict)
+    idempotency_key = models.CharField(max_length=255)
+    request_hash = models.CharField(max_length=64)
+    status = models.CharField(max_length=16, default="queued")
+    result = models.JSONField(null=True, blank=True)
+    error = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if self.snapshot_id and self.run_id != self.snapshot.run_id:
+            raise ValueError("Command and snapshot must belong to the same run")
+        return super().save(*args, **kwargs)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["run", "idempotency_key"],
+                                               name="unique_team_command_run_key")]

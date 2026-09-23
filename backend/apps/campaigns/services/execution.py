@@ -3,6 +3,7 @@
 import hashlib
 import uuid
 
+from config.runtime import dataset_execution_blocker
 from django.db import transaction
 from django.utils import timezone
 
@@ -47,6 +48,9 @@ def start_run(run_id, *, idempotency_key, execution_available=True):
             raise ExecutionConflict("Calculation has already been started")
         if not execution_available:
             raise EngineNotReady()
+        blocker = dataset_execution_blocker(run.dataset)
+        if blocker:
+            raise EngineNotReady(blocker)
         run.status = CampaignRun.Status.QUEUED
         run.task_id = task_id
         run.cancel_requested = False

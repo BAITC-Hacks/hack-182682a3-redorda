@@ -1,4 +1,8 @@
-import type { Dataset, Meta, Page, Run, RunEventsPage, RunInput, RunResult, Session } from './types';
+import type {
+  ApiRun, Dataset, Meta, Page, RunEventsPage, RunInput, RunResult, Session,
+  TeamCommand, TeamCommandInput, TeamSnapshot,
+} from './types';
+import { toEvent, toResults, toRun } from './adapters';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public fields: Record<string, unknown> = {},
@@ -7,85 +11,168 @@ export class ApiError extends Error {
   }
 }
 
+export type ImportProgress = { phase: 'uploading'; percent: number | null } | { phase: 'processing' };
+
+function responseError(status: number, payload: any) {
+  const code = payload?.error?.code || '';
+  if (code === 'not_authenticated') unauthorizedListeners.forEach(listener => listener());
+  if (code === 'csrf_failed' || code === 'permission_denied') csrfToken = null;
+  return new ApiError(status, payload?.error?.message || 'Не удалось выполнить запрос. Повторите попытку.',
+    payload?.error?.fields || {}, code);
+}
+
 let csrfToken: string | null = null;
-let csrfRequest: Promise<string> | null = null;
-const authListeners = new Set<() => void>();
+const unauthorizedListeners = new Set<() => void>();
 
 export function onAuthenticationRequired(listener: () => void) {
-  authListeners.add(listener);
-  return () => { authListeners.delete(listener); };
+  unauthorizedListeners.add(listener);
+  return () => { unauthorizedListeners.delete(listener); };
 }
 
-async function responseError(response: Response, path: string): Promise<never> {
-  const payload = await response.json().catch(() => null);
-  if (response.status === 401 || response.status === 403) {
-    csrfToken = null;
-    if (!path.startsWith('auth/') || path === 'auth/logout/') {
-      authListeners.forEach(listener => listener());
-    }
-  }
-  throw new ApiError(response.status, payload?.error?.message || 'Не удалось выполнить запрос.',
-    payload?.error?.fields || {}, payload?.error?.code || '');
-}
-
-async function getCsrfToken(): Promise<string> {
-  if (csrfToken) return csrfToken;
-  if (!csrfRequest) {
-    csrfRequest = request<{ csrf_token: string }>('auth/csrf/').then(payload => {
-      if (!payload.csrf_token) throw new ApiError(502, 'Сервер не вернул CSRF-токен.');
-      csrfToken = payload.csrf_token;
-      return csrfToken;
-    }).finally(() => { csrfRequest = null; });
-  }
-  return csrfRequest;
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, csv = false, timeoutMs = 15000): Promise<T> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  init?.signal?.addEventListener('abort', abort, { once: true });
+  if (init?.signal?.aborted) controller.abort();
+  const timeout = globalThis.setTimeout(abort, timeoutMs);
   const headers = new Headers(init?.headers);
-  headers.set('Accept', 'application/json');
-  if (init?.body) headers.set('Content-Type', 'application/json');
-  if (init?.method && !['GET', 'HEAD', 'OPTIONS'].includes(init.method.toUpperCase())) {
-    headers.set('X-CSRFToken', await getCsrfToken());
+  // DRF negotiates JSON errors before the streaming CSV view executes.
+  headers.set('Accept', csv ? 'text/csv, application/json' : 'application/json');
+  try {
+    if (init?.method === 'POST') {
+      headers.set('Content-Type', 'application/json');
+      headers.set('X-CSRFToken', csrfToken || await csrf());
+    }
+    const response = await fetch(`/api/v1/${path}`, { ...init, headers, signal: controller.signal, credentials: 'same-origin' });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      const code = payload?.error?.code || '';
+      if (code === 'not_authenticated') unauthorizedListeners.forEach(listener => listener());
+      if (code === 'csrf_failed' || code === 'permission_denied') csrfToken = null;
+      throw new ApiError(response.status, payload?.error?.message || 'Не удалось выполнить запрос. Попробуйте ещё раз.', payload?.error?.fields || {}, code);
+    }
+    if (csv) {
+      if (!response.headers.get('Content-Type')?.toLowerCase().includes('text/csv')) {
+        throw new ApiError(502, 'Вместо CSV сервер вернул другой формат. Повторите скачивание позже.');
+      }
+      return await response.blob() as T;
+    }
+    const payload = await response.json().catch(() => null);
+    if (payload === null) throw new ApiError(502, 'Сервер вернул некорректный ответ.');
+    if (typeof payload?.csrf_token === 'string') csrfToken = payload.csrf_token;
+    return payload as T;
+  } catch (error) {
+    if (error instanceof ApiError || init?.signal?.aborted) throw error;
+    throw new ApiError(0, controller.signal.aborted
+      ? 'Сервер не ответил вовремя. Проверьте соединение и повторите запрос.'
+      : 'Нет связи с сервером. Проверьте соединение и повторите запрос.');
+  } finally {
+    globalThis.clearTimeout(timeout);
+    init?.signal?.removeEventListener('abort', abort);
   }
-  const response = await fetch(`/api/v1/${path}`, { ...init, credentials: 'include', headers });
-  if (!response.ok) return responseError(response, path);
-  const payload = await response.json().catch(() => null);
-  if (payload === null) throw new ApiError(502, 'Сервер вернул некорректный ответ.');
-  return payload as T;
 }
 
-async function updateSession(path: string, body?: Record<string, string>) {
-  const session = await request<Session>(path, {
-    method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}),
-  });
-  csrfToken = session.csrf_token || null;
-  return session;
+async function csrf(signal?: AbortSignal): Promise<string> {
+  const result = await request<{ csrf_token: string }>('auth/csrf/', { signal });
+  if (typeof result.csrf_token !== 'string' || !result.csrf_token.trim()) {
+    csrfToken = null;
+    throw new ApiError(502, 'Сервер не вернул CSRF-токен.');
+  }
+  csrfToken = result.csrf_token;
+  return csrfToken;
 }
+
+function importedDataset(payload: any): Dataset {
+  const counts = (value: unknown) => value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Object.values(value).every(count => typeof count === 'number' && Number.isFinite(count) && count >= 0);
+  const summary = payload?.summary;
+  if (!payload || typeof payload.id !== 'string' || typeof payload.name !== 'string'
+    || typeof payload.customer_count !== 'number' || !Number.isFinite(payload.customer_count) || payload.customer_count < 0
+    || typeof payload.imported_at !== 'string' || !Number.isFinite(Date.parse(payload.imported_at))
+    || !summary || typeof summary.tariff_count !== 'number' || !Number.isFinite(summary.tariff_count)
+    || !summary.segments || !['arpu_segment', 'data_segment', 'call_segment'].every(key => counts(summary.segments[key]))
+    || !(summary.baseline_arpu === null || typeof summary.baseline_arpu === 'string' || typeof summary.baseline_arpu === 'number')
+    || !(summary.synthetic === null || typeof summary.synthetic === 'boolean')
+    || (summary.file_rows !== undefined && !counts(summary.file_rows))) {
+    throw new ApiError(502, 'Сервер вернул неполные данные об импорте. Обновите страницу или повторите попытку.');
+  }
+  return payload as Dataset;
+}
+
+async function importDataset(files: File[], onProgress: (progress: ImportProgress) => void, signal?: AbortSignal): Promise<Dataset> {
+  const token = await csrf(signal);
+  if (signal?.aborted) throw new ApiError(0, 'Загрузка прервана. Повторите импорт.');
+  const body = new FormData();
+  files.forEach(file => body.append('files', file));
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.upload.addEventListener('progress', event => {
+      onProgress({ phase: 'uploading', percent: event.lengthComputable
+        ? Math.min(100, Math.round(event.loaded / event.total * 100)) : null });
+    });
+    xhr.upload.addEventListener('load', () => onProgress({ phase: 'processing' }));
+    xhr.addEventListener('load', () => {
+      let payload: any = null;
+      try { payload = JSON.parse(xhr.responseText); } catch { /* Report invalid server responses below. */ }
+      if (xhr.status < 200 || xhr.status >= 300) reject(responseError(xhr.status, payload));
+      else if (!payload) reject(new ApiError(502, 'Сервер вернул некорректный ответ. Повторите попытку.'));
+      else {
+        try { resolve(importedDataset(payload)); } catch (error) { reject(error); }
+      }
+    });
+    xhr.addEventListener('error', () => reject(new ApiError(0,
+      'Соединение прервалось. Выбранные файлы сохранены — проверьте сеть и повторите импорт.')));
+    xhr.addEventListener('abort', () => reject(new ApiError(0, 'Загрузка прервана. Повторите импорт.')));
+    xhr.addEventListener('timeout', () => reject(new ApiError(0,
+      'Сервер не ответил за пять минут. Обновите страницу, чтобы проверить импорт, или повторите попытку.')));
+    xhr.open('POST', '/api/v1/datasets/import/');
+    xhr.timeout = 5 * 60 * 1000;
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('X-CSRFToken', token);
+    const abort = () => xhr.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    xhr.addEventListener('loadend', () => signal?.removeEventListener('abort', abort));
+    onProgress({ phase: 'uploading', percent: null });
+    xhr.send(body);
+  });
+}
+
 
 export const api = {
+  me: (signal?: AbortSignal) => request<Session>('auth/me/', { signal }),
   session: (signal?: AbortSignal) => request<Session>('auth/me/', { signal }),
-  login: (username: string, password: string) => updateSession('auth/login/', { username, password }),
-  logout: () => updateSession('auth/logout/'),
+  login: async (username: string, password: string) => {
+    await csrf();
+    return request<Session>('auth/login/', {
+      method: 'POST', body: JSON.stringify({ username, password }),
+    });
+  },
+  logout: () => request<Session>('auth/logout/', { method: 'POST' }),
+  onUnauthorized: (listener: () => void) => {
+    unauthorizedListeners.add(listener);
+    return () => { unauthorizedListeners.delete(listener); };
+  },
   meta: (signal?: AbortSignal) => request<Meta>('meta/', { signal }),
   dataset: (signal?: AbortSignal) => request<Dataset>('datasets/current/', { signal }),
-  runs: (page = 1, signal?: AbortSignal) => request<Page<Run>>(`runs/?page=${page}`, { signal }),
-  run: (id: string, signal?: AbortSignal) => request<Run>(`runs/${id}/`, { signal }),
-  createRun: (input: RunInput) => request<Run>('runs/', {
+  importDemo: (signal?: AbortSignal) => request<Dataset>('datasets/import-demo/', { method: 'POST', body: '{}', signal }, false, 5 * 60 * 1000).then(importedDataset),
+  importDataset,
+  runs: (page = 1, signal?: AbortSignal) => request<Page<ApiRun>>(`runs/?page=${page}`, { signal }).then(page => ({ ...page, results: page.results.map(toRun) })),
+  run: (id: string, signal?: AbortSignal) => request<ApiRun>(`runs/${id}/`, { signal }).then(toRun),
+  createRun: (input: RunInput) => request<ApiRun>('runs/', {
     method: 'POST', body: JSON.stringify(input),
-  }),
-  startRun: (id: string, idempotencyKey: string) => request<Run>(`runs/${id}/start/`, {
-    method: 'POST', headers: { 'Idempotency-Key': idempotencyKey },
-  }),
-  cancelRun: (id: string) => request<Run>(`runs/${id}/cancel/`, { method: 'POST' }),
-  events: (id: string, after: number, signal?: AbortSignal) => request<RunEventsPage>(
-    `runs/${id}/events/?after=${after}&limit=100`, { signal }),
-  results: (id: string, signal?: AbortSignal) => request<RunResult>(`runs/${id}/results/`, { signal }),
-  async exportRun(id: string): Promise<Blob> {
-    const path = `runs/${id}/export/`;
-    const response = await fetch(`/api/v1/${path}`, {
-      credentials: 'include', headers: { Accept: 'text/csv, application/json' },
-    });
-    if (!response.ok) return responseError(response, path);
-    return response.blob();
-  },
+  }).then(toRun),
+  startRun: (id: string, key: string, signal?: AbortSignal) => request<ApiRun>(`runs/${id}/start/`, {
+    method: 'POST', body: '{}', headers: { 'Idempotency-Key': key }, signal,
+  }).then(toRun),
+  cancelRun: (id: string, signal?: AbortSignal) => request<ApiRun>(`runs/${id}/cancel/`, { method: 'POST', body: '{}', signal }).then(toRun),
+  events: (id: string, after: number, signal?: AbortSignal) => request<RunEventsPage>(`runs/${id}/events/?after=${after}`, { signal }).then(page => ({ ...page, results: page.results.map(toEvent) })),
+  results: (id: string, signal?: AbortSignal) => request<RunResult>(`runs/${id}/results/`, { signal }).then(toResults),
+  exportRun: (id: string, signal?: AbortSignal) => request<Blob>(`runs/${id}/export/`, { signal }, true),
+  team: (id: string, signal?: AbortSignal) => request<TeamSnapshot>(`runs/${id}/team/`, { signal }),
+  submitTeamCommand: (id: string, input: TeamCommandInput, key: string, signal?: AbortSignal) =>
+    request<TeamCommand>(`runs/${id}/commands/`, {
+      method: 'POST', body: JSON.stringify(input), headers: { 'Idempotency-Key': key }, signal,
+    }),
+  teamCommand: (id: string, commandId: string, signal?: AbortSignal) =>
+    request<TeamCommand>(`runs/${id}/commands/${encodeURIComponent(commandId)}/`, { signal }),
 };

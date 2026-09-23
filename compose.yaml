@@ -11,6 +11,7 @@ x-backend: &backend
   volumes:
     - ./data/participant-kit:/workspace/data/participant-kit:ro
     - django_static:/workspace/backend/staticfiles
+    - dataset_media:/workspace/backend/media
 services:
   db:
     image: postgres:16-alpine
@@ -78,3 +79,4 @@ services:
 volumes:
   postgres_data:
   django_static:
+  dataset_media:

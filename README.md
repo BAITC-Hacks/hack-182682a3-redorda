@@ -36,8 +36,15 @@ PostgreSQL, живую очередь и сборку Compose. Действую�
 login/CSRF, start/cancel, события, результаты и CSV; добавлены четыре пиксельных маскота.
 Доступность расчётов на сервере определяется конфигурацией и readiness-проверками.
 
-**Следующая задача:** связать персонажей с настоящими задачами/артефактами,
-добавить объяснение, сравнение и изменённые планы, сохранить два режима одного запуска.
+**Backend живой команды:** объединены хранение задач/артефактов и snapshot,
+очередь идемпотентных команд и три HTTP-маршрута `team/`, `commands/`,
+`commands/{id}/`. `create_plan` создаёт связанный черновик с изменённым бюджетом;
+повтор команды не создаёт второй план. Добавлены типы и методы API для frontend.
+
+**Следующая задача AI/frontend:** движок должен публиковать события ролей и
+реализовать `explain`/`compare` по сохранённому snapshot, frontend — подключить
+персонажей к настоящим задачам/артефактам и командам. Неподключённые AI-функции
+не объявляются доступными. Ограничение каналов ожидает поддержки движка.
 Сейчас анимация персонажей использует демонстрационную последовательность по таймеру.
 Прогноз и результат симулятора различаются: текущий web-пайплайн возвращает
 `simulator_result=null`. Production-сценарий и конкурсный результат проверяются отдельно.
@@ -72,10 +79,30 @@ make migrate
 - Документация API: http://localhost:8000/api/docs/
 - Проверки: `make check`; обновление OpenAPI: `make schema`.
 
+Проверки импорта отдельно: `.venv/bin/python -m pytest -q backend/tests/test_dataset_upload.py`.
+Они покрывают демонабор, multipart-загрузку, лимиты, ошибки CSV, сохранение файлов,
+повторный выбор набора, доступ с CSRF и схему API. `make check` также проверяет
+совместимость с прежним семифайловым CLI-импортом и собирает frontend.
+
 Без Make: `python3 -m venv .venv`, `.venv/bin/python -m pip install -r requirements.txt`, `npm --prefix frontend ci`, `.venv/bin/python backend/manage.py migrate`. На Windows используйте `.venv\Scripts\python.exe` вместо `.venv/bin/python`.
 
 ## Данные Beeline
 
+Откройте **Аудитория** и выберите **Импортировать демоданные**: четыре исходных
+CSV уже включены в `data/demo/`, скачивать пакет для этого сценария не нужно.
+Для своих данных выберите или перетащите `dict_tariff.csv`, `traffic.csv`,
+`arpu_monthly.csv` и `change_tariff.csv` в том же формате. Можно добавлять файлы
+по одному. Лимит — 30 МиБ на файл и 50 МиБ на набор. Интерфейс показывает передачу,
+проверку на сервере и анимацию взлёта после успешного импорта; сводка обновляется сразу.
+
+Четыре CSV дают фактическое число абонентов, тарифов и строк. Прогноз ARPU и готовые
+сегменты доступны только в полном пакете. Пользовательские загрузки хранятся в
+`backend/media/` (в Docker — общий том `dataset_media`) и не входят в Git.
+Ошибки не меняют текущие данные, а повторный импорт не создаёт дубликат.
+
+Четыре CSV доступны для просмотра и создания черновиков. Для запуска симулятора
+нужен готовый профиль аудитории: интерфейс объясняет это ограничение и не запускает
+неполный набор. Для полного пакета с профилем и словарём признаков сохранён CLI-импорт.
 Скачайте [выданный ZIP](https://drive.google.com/file/d/1cQUKtE_cm9TVXgzpcFwQYYUpmuFaJHHT/view), затем:
 
 ```bash
@@ -83,7 +110,7 @@ make migrate
 .venv/bin/python backend/manage.py import_participant_data --path data/participant-kit
 ```
 
-Импорт проверяет SHA-256 архива и сохраняет данные в `data/participant-kit`. Данные синтетические; интерфейс отображает агрегаты из CSV. После импорта обновите страницу.
+Архив проверяется по SHA-256, файлы организаторов сохраняются без изменений в игнорируемую Git папку. Данные синтетические. Импорт повторяемый: в БД сохраняются отдельные профили абонентов и агрегированная сводка; интерфейс показывает агрегаты из CSV, не зашитые числа. Обновите страницу после импорта.
 
 ## Все сервисы через Docker
 
@@ -95,18 +122,20 @@ docker compose up --build -d
 docker compose exec backend python backend/manage.py import_participant_data --path data/participant-kit
 ```
 
-Перед импортом распакуйте ZIP предыдущей командой. Compose поднимает frontend, backend, PostgreSQL, Redis и worker; отдельный сервис
+Для CLI-импорта распакуйте ZIP предыдущей командой; демоимпорт из интерфейса работает без ZIP. Compose поднимает frontend, backend, PostgreSQL, Redis и worker; отдельный сервис
 `migrate` завершается до старта API. Интерфейс доступен на `localhost:5173`.
 Пользователь: `docker compose exec backend python backend/manage.py createsuperuser`.
 Для публичного размещения нужны HTTPS, собственный `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=0`,
 `DJANGO_ALLOWED_HOSTS` и `DJANGO_CSRF_TRUSTED_ORIGINS`. Порт БД и Redis наружу не открыт.
-Docker не установлен на машине интеграции: запуск контейнеров локально не проверен.
+Полная сборка Compose проверяется отдельно от тестов очереди на PostgreSQL/Redis.
 
 Дополнительные проверки:
 
 ```bash
 make schema
 make check
+# Необязательный сквозной тест на импортированном официальном пакете:
+REDORDA_OFFICIAL_KIT_TEST="$PWD/data/participant-kit" .venv/bin/python -m pytest -q backend/tests/test_public_environment.py
 # Отдельная тестовая PostgreSQL БД и доступный Redis; SQLite для этой проверки не подходит.
 DATABASE_URL=postgresql://USER@localhost/redorda_test make check-integration
 make compose-check  # нужен Docker
