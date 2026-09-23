@@ -4,6 +4,8 @@
 **/dist
 **/__pycache__
 **/*.sqlite3
+backend/media
+backend/staticfiles
 .env
 .env.*
 !.env.example
