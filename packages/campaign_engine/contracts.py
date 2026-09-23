@@ -1,4 +1,4 @@
-"""Stable integration contracts. Coordinate changes with all three developers."""
+"""Shared data models and environment protocol."""
 
 from typing import Any, Literal, Protocol
 
@@ -57,7 +57,7 @@ class HypothesisBatch(StrictModel):
 
 
 class AgentEnvironment(Protocol):
-    """Only public organizer APIs may be used by the strategy."""
+    """Data and pilot operations used by the strategy."""
 
     customer_profile: Any
     tariffs: Any

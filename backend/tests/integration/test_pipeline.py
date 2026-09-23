@@ -1,6 +1,6 @@
 """Live queue transport with a runner injected exclusively in tests.
 
-This verifies backend plumbing, not the unimplemented competition strategy.
+This verifies backend plumbing with an injected test runner.
 """
 import csv
 import io
@@ -185,8 +185,7 @@ def test_live_worker_failures_and_cancellation(client, live_worker, monkeypatch,
         if mode == "timeout":
             raise TimeoutError("Test deadline")
         if mode == "engine":
-            # Actual, unimplemented shared Agent.act; only public env is replaced.
-            monkeypatch.setattr(engine_bridge, "_public_environment", lambda ctx: object())
+            # The fixture configures a missing public environment factory.
             return engine_bridge.run_engine(run, check_cancel=check_cancel)
 
         class CancellingRunner(FakeRunner):
