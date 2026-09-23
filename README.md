@@ -1,24 +1,26 @@
 # RedOrda · Beeline Campaign Planner
 
-Веб-приложение для планирования тарифных маркетинговых кампаний: аудитория → гипотезы → пилоты → план с максимальным приростом выручки за вычетом стоимости контактов.
+Планирование тарифных маркетинговых кампаний: аудитория → гипотезы → пилоты → выбор кампаний с оценкой прироста выручки и стоимости контактов.
 
-**Стек:** Django 5.2, DRF, React **18.2.0**, TypeScript, PostgreSQL, Redis, Celery. Общий Python-движок для веба и судейского `Agent.act(env)`. OpenAI Responses API, модель по умолчанию `gpt-6-sol`, настраивается через `.env`.
+**Стек:** Django 5.2, DRF, React **18.2.0**, TypeScript, PostgreSQL, Redis, Celery. Общий Python-движок для веба и `Agent.act(env)`. OpenAI Responses API, модель по умолчанию `gpt-6-sol`, настраивается через `.env`.
 
 ## Три разработчика, три этапа
 
-| Разработчик | Этап 1: основа | Этап 2: сценарий | Этап 3: сдача |
+| Разработчик | Этап 1: основа | Этап 2: сценарий | Этап 3: проверка |
 | --- | --- | --- | --- |
 | [1. Backend](docs/developers/01-backend.md) | Данные, модели, API | Celery, прогресс, результаты | Интеграция, ошибки, Docker |
 | [2. AI-агент](docs/developers/02-agent.md) | Базовая стратегия и пилоты | GPT-6, разведка, оптимизация | Оценка, лимиты, submission |
 | [3. Frontend](docs/developers/03-frontend.md) | Экраны и API-клиент | Запуск, прогресс, таблица | Адаптация, проверка, демо |
 
-В каждом ТЗ есть инструкция для ИИ-помощника. [Общий API-контракт](docs/api-contract.md).
+[Общий API-контракт](docs/api-contract.md).
 
 ## Что уже есть
 
-Скелет запускается: импорт сводки публичного датасета, обзор аудитории, создание и просмотр черновиков планов, API и OpenAPI, миграция БД, адаптивный React-интерфейс, каркас OpenAI с типизированным ответом, тесты и CI.
+**Веб-приложение:** импорт сводки датасета, обзор аудитории, создание и просмотр черновиков планов, API и OpenAPI, миграции БД, React-интерфейс, тесты и CI.
 
-**Ещё предстоит:** стратегия `Agent.act`, запуск расчётов в Celery, пилоты, результаты и экспорт. Кнопка запуска пока недоступна. Вызовы OpenAI не выполняются автоматически. Публичное развёртывание требует настройки доступа; текущий запуск предназначен для локальной разработки.
+**AI-движок:** общий runner и `Agent.act`, анализ истории, адаптивные пилоты, оценки неопределённости, выбор каналов, проверка лимитов, события и отмена, GPT-6 с fallback/replay, воспроизводимый CSV и сборка автономного агента. [Контракт runner и подключение backend](docs/developers/02-agent-integration.md).
+
+**Ещё не подключено:** выполнение расчётов через Celery, HTTP-запуск, сохранение событий/результатов и экспорт в веб-приложении. Кнопка запуска пока недоступна. Текущая конфигурация предназначена для локальной разработки.
 
 ## Локальный запуск
 
@@ -48,7 +50,7 @@ make migrate
 .venv/bin/python backend/manage.py import_participant_data --path data/participant-kit
 ```
 
-Архив проверяется по SHA-256, файлы организаторов сохраняются без изменений в игнорируемую Git папку. Данные синтетические. Импорт повторяемый; интерфейс показывает агрегаты из CSV, не зашитые числа. Обновите страницу после импорта.
+Импорт проверяет SHA-256 архива и сохраняет данные в `data/participant-kit`. Данные синтетические; интерфейс отображает агрегаты из CSV. После импорта обновите страницу.
 
 ## Все сервисы через Docker
 
@@ -58,19 +60,23 @@ docker compose up --build -d
 docker compose exec backend python backend/manage.py import_participant_data --path data/participant-kit
 ```
 
-Перед импортом распакуйте ZIP предыдущей командой. Compose поднимает frontend, backend, PostgreSQL, Redis и worker; интерфейс также доступен на `localhost:5173`. Worker пока подготовлен для подключения расчётов на этапе 2. Compose предназначен для разработки.
+Перед импортом распакуйте ZIP предыдущей командой. Compose поднимает frontend, backend, PostgreSQL, Redis и worker; интерфейс доступен на `localhost:5173`. Задача расчёта в worker ещё не подключена.
 
-## OpenAI и проверка организаторов
+## OpenAI и проверки
 
-Заполните только серверный `.env`: `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_REASONING_EFFORT`. Доступ к модели зависит от API-проекта. Каркас использует [Responses API и GPT-6](https://developers.openai.com/api/docs/guides/latest-model) и [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs); при ошибке выдаёт сигнал для расчётного fallback. Интеграция в стратегию — задача разработчика 2.
-
-После реализации `Agent.act`:
+Заполните серверный `.env`: `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_REASONING_EFFORT`. Режим `openai` использует [Responses API](https://developers.openai.com/api/docs/guides/latest-model) и [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs); при ошибке продолжает расчётную стратегию. По умолчанию `Agent()` работает без сетевых вызовов. Доступ к модели зависит от API-проекта.
 
 ```bash
+.venv/bin/python scripts/check_openai.py
 .venv/bin/python scripts/run_official.py local_eval --runs 10
 .venv/bin/python scripts/run_official.py make_submission
+.venv/bin/python scripts/build_agent.py --submission artifacts/submission.csv
+.venv/bin/python scripts/benchmark_agent.py --runs 10 --policies adaptive fixed_100 template
+make check
 ```
 
-CSV появится в `artifacts/submission.csv`. Сейчас судейский агент явно помечен как нереализованный; скелет не является готовой конкурсной стратегией.
+CSV сохраняется в `artifacts/submission.csv`, автономный агент — в `artifacts/delivery/`, сравнение политик — в `artifacts/benchmark.json`. Проверка OpenAI сохраняет предложения для replay в `artifacts/openai_hypotheses_replay.json`.
 
-Лимиты: 100 000 у. е., 15 000 контактов с пилотами, 20 пилотов по 10–200 клиентов, 1–10 кампаний до 5 000 клиентов, до 10 минут. В комментарии шаблона организаторов указан более строгий ориентир 5 минут; целимся в него, руководство участника допускает 10 минут. [Официальное ТЗ](https://docs.google.com/document/d/1bt_tgnIXnsnGMMjeaqbOY165MXmYQOTllRCDwcKySKI/edit).
+Прогноз движка и результат локальной симуляции — отдельные показатели. Нижний хвост прогноза учитывает неопределённость эффекта, но не весь риск выборки; доходность не гарантируется.
+
+Лимиты среды: бюджет 100 000, 15 000 контактов с пилотами, до 20 пилотов с запрашиваемым размером 10–200 клиентов, 1–10 кампаний до 5 000 клиентов, до 10 минут. [Описание кейса](https://docs.google.com/document/d/1bt_tgnIXnsnGMMjeaqbOY165MXmYQOTllRCDwcKySKI/edit).

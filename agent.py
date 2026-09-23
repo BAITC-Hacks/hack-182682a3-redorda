@@ -1,4 +1,4 @@
-"""Official judging entry point. Install requirements.txt from repository root first."""
+"""Campaign agent entry point."""
 
 from campaign_engine.agent import Agent
 
