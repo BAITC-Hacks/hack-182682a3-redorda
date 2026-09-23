@@ -7,11 +7,11 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from apps.campaigns.models import Dataset
+from apps.campaigns.models import Dataset, Subscriber
 
 
 class Command(BaseCommand):
-    help = "Validate public participant CSVs and save an idempotent dataset summary."
+    help = "Validate public participant CSVs and save the dataset summary and subscriber profiles."
 
     def add_arguments(self, parser):
         parser.add_argument("--path", required=True, type=Path)
@@ -31,7 +31,7 @@ class Command(BaseCommand):
         allowed = {"arpu_segment": {"LOW", "MID", "HIGH"},
                    "data_segment": {"NON_USER", "LITE", "HEAVY"},
                    "call_segment": {"LOW", "MEDIUM", "HIGH"}}
-        ids, total_arpu = set(), Decimal("0")
+        ids, profiles_data, total_arpu = set(), [], Decimal("0")
         missing_current_tariff = 0
         with profiles.open(encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
@@ -53,6 +53,7 @@ class Command(BaseCommand):
                 except (InvalidOperation, TypeError, ValueError) as exc:
                     raise CommandError(f"Invalid predicted_arpu at row {row_number}") from exc
                 ids.add(customer_id)
+                profiles_data.append(row.copy())
                 total_arpu += value
                 for name, counts in segments.items():
                     if row[name] and row[name] not in allowed[name]:
@@ -70,6 +71,12 @@ class Command(BaseCommand):
                 "synthetic": True,
             },
         })
+        dataset.subscribers.all().delete()
+        for start in range(0, len(profiles_data), 500):
+            Subscriber.objects.bulk_create([
+                Subscriber(dataset=dataset, id_number=row["ID_NUMBER"], profile=row)
+                for row in profiles_data[start:start + 500]
+            ], batch_size=500)
         self.stdout.write(self.style.SUCCESS(
             f"{'Imported' if created else 'Updated'} {dataset.id}: {len(ids)} customers"
         ))

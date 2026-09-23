@@ -16,6 +16,19 @@ class Dataset(models.Model):
         ordering = ["-imported_at"]
 
 
+class Subscriber(models.Model):
+    dataset = models.ForeignKey(Dataset, on_delete=models.CASCADE, related_name="subscribers")
+    id_number = models.TextField()
+    profile = models.JSONField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["dataset", "id_number"], name="unique_subscriber_per_dataset"
+            ),
+        ]
+
+
 class CampaignRun(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Черновик"
