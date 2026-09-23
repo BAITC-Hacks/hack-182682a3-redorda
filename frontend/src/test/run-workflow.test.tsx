@@ -108,6 +108,46 @@ describe('пользовательский сценарий', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('продолжает опрос, если первое чтение после принятого запуска не удалось', async () => {
+    open(); const start = await screen.findByRole('button', { name: 'Запустить расчёт' });
+    vi.useFakeTimers();
+    override = path => path === 'runs/plan-1/' ? Promise.reject(new TypeError('offline')) : undefined;
+    fireEvent.click(start); await act(async () => {});
+    expect(screen.getByRole('alert')).toHaveTextContent(/Не удалось обновить/);
+    override = undefined; status = 'completed'; await tick();
+    expect(screen.getByRole('table', { name: 'Выбранные кампании' })).toBeInTheDocument();
+  });
+
+  it('дочитывает все страницы финального журнала и не теряет результаты при сбое журнала', async () => {
+    status = 'completed';
+    override = path => {
+      if (path.endsWith('events/?after=0')) return json({ count: 2, next: '?after=1', previous: null, results: [event] });
+      if (path.endsWith('events/?after=1')) return json({ error: { message: 'Журнал временно недоступен.' } }, 503);
+    };
+    open();
+    expect(await screen.findByRole('table', { name: 'Выбранные кампании' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Журнал временно недоступен');
+    override = path => path.endsWith('events/?after=1') ? json({ count: 1, next: null, previous: null,
+      results: [{ ...event, id: 2, message: 'Финальный план сохранён', kind: 'info', pilot: null }] }) : undefined;
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить обновление' }));
+    expect(await screen.findByText('Финальный план сохранён')).toBeInTheDocument();
+    expect(screen.getAllByText('Проверена гипотеза перехода')).toHaveLength(1);
+  });
+
+  it('прерывает запрос и прекращает опрос при уходе со страницы', async () => {
+    vi.useFakeTimers(); status = 'running'; open(); await act(async () => {});
+    let signal: AbortSignal | null | undefined;
+    override = (path, init) => {
+      if (path === 'runs/plan-1/') { signal = init?.signal; return new Promise(() => {}); }
+      if (path === 'runs/?page=1') return json({ count: 0, next: null, previous: null, results: [] });
+    };
+    await tick();
+    fireEvent.click(screen.getByRole('link', { name: '← Все планы' }));
+    await act(async () => {});
+    expect(signal?.aborted).toBe(true);
+    const count = calls.length; await tick(); expect(calls).toHaveLength(count);
+  });
+
   it('показывает ошибку расчёта и не предлагает запуск того же плана', async () => {
     status = 'failed';
     override = path => path === 'runs/plan-1/' ? json({ ...draft, status, error: { code: 'timeout', message: 'Превышено время расчёта.' } }) : undefined;

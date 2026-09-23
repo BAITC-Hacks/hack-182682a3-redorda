@@ -11,12 +11,13 @@ export function useRun(id: string, execution: boolean) {
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
   const cursor = useRef(0);
+  const lastRun = useRef<Run | null>(null);
   const retry = useCallback(() => setRevision(value => value + 1), []);
 
   useEffect(() => {
     const controller = new AbortController();
     let timer: number | undefined;
-    let latest: Run | null = null;
+    let latest: Run | null = lastRun.current;
     const message = (reason: unknown) => reason instanceof Error ? reason.message : 'Проверьте соединение.';
 
     async function refresh() {
@@ -24,6 +25,7 @@ export function useRun(id: string, execution: boolean) {
       try {
         latest = await api.run(id, controller.signal);
         if (controller.signal.aborted) return;
+        lastRun.current = latest;
         setRun(latest);
       } catch (reason) {
         failures.push(`Не удалось обновить план. ${message(reason)}`);
@@ -61,6 +63,6 @@ export function useRun(id: string, execution: boolean) {
   }, [id, execution, revision]);
 
   // The parent keys this hook's component by run ID, clearing its state on navigation.
-  const accept = (value: Run) => { setRun(value); retry(); };
+  const accept = (value: Run) => { lastRun.current = value; setRun(value); retry(); };
   return { run, events, results, error, loading, retry, accept };
 }
