@@ -91,15 +91,16 @@ docker compose exec backend python backend/manage.py import_participant_data --p
 Пользователь: `docker compose exec backend python backend/manage.py createsuperuser`.
 Для публичного размещения нужны HTTPS, собственный `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=0`,
 `DJANGO_ALLOWED_HOSTS` и `DJANGO_CSRF_TRUSTED_ORIGINS`. Порт БД и Redis наружу не открыт.
-Docker не установлен на машине интеграции: запуск контейнеров локально не проверен.
+Полная сборка Compose проверяется отдельно от тестов очереди на PostgreSQL/Redis.
 
 Дополнительные проверки:
 
 ```bash
 make schema
 make check
-# Отдельная тестовая PostgreSQL БД и доступный Redis; SQLite для этой проверки не подходит.
+# Необязательный сквозной тест на импортированном официальном пакете:
 REDORDA_OFFICIAL_KIT_TEST="$PWD/data/participant-kit" .venv/bin/python -m pytest -q backend/tests/test_public_environment.py
+# Отдельная тестовая PostgreSQL БД и доступный Redis; SQLite для этой проверки не подходит.
 DATABASE_URL=postgresql://USER@localhost/redorda_test make check-integration
 make compose-check  # нужен Docker
 ```

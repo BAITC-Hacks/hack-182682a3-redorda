@@ -65,4 +65,6 @@ def test_official_dataset_import_to_real_runner_and_export(settings, monkeypatch
     assert result["totals"]["predicted_effect"] is not None
     assert result["totals"]["simulator_result"] is None
     assert run.pilots.count() == 1
-    assert b"tariff_" in b"".join(client.get(url + "export/").streaming_content)
+    export = client.get(url + "export/", HTTP_ACCEPT="text/csv, application/json")
+    assert export.status_code == 200
+    assert b"tariff_" in b"".join(export.streaming_content)

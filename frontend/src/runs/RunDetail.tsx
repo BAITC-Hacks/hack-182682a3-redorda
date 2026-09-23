@@ -30,7 +30,7 @@ function Stepper({ status }: { status: Run['status'] }) {
 }
 
 function Detail({ id, meta }: { id: string; meta: Meta }) {
-  const { run, events, results, error, loading, retry, accept } = useRun(id, meta.features.run_execution);
+  const { run, events, results, error, loading, retry, accept } = useRun(id);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState<'start' | 'cancel' | 'export' | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -95,9 +95,9 @@ function Detail({ id, meta }: { id: string; meta: Meta }) {
       <div><h2>{run.status === 'draft' ? 'Всё начинается с проверки гипотез' : run.status === 'queued' ? 'Расчёт в очереди' : run.status === 'running' ? 'Агент проверяет кампании' : run.status === 'completed' ? 'Расчёт завершён' : run.status === 'cancelled' ? 'Расчёт остановлен' : 'Расчёт завершился с ошибкой'}</h2>
         <p>{run.status === 'draft' ? 'Агент проведёт пилоты в пределах заданных лимитов и выберет кампании для итогового плана.' : active ? 'Можно уйти со страницы и вернуться позже. Ход расчёта сохраняется.' : run.status === 'completed' ? 'Изучите выбранные кампании и их обоснование перед экспортом.' : 'Выполненные пилоты остаются в журнале. Для нового расчёта создайте новый план.'}</p></div>
       {run.status === 'draft' && <button className="button primary" disabled={!meta.features.run_execution || busy !== null || loading} onClick={() => void action('start')}><Play size={16} />{busy === 'start' ? 'Запускаем…' : 'Запустить расчёт'}</button>}
-      {active && <button className="button" disabled={!meta.features.run_execution || busy !== null || cancelled} onClick={() => setConfirmCancel(true)}><Square size={14} />{cancelled ? 'Остановка запрошена' : busy === 'cancel' ? 'Останавливаем…' : 'Остановить расчёт'}</button>}
+      {active && <button className="button" disabled={busy !== null || cancelled} onClick={() => setConfirmCancel(true)}><Square size={14} />{cancelled ? 'Остановка запрошена' : busy === 'cancel' ? 'Останавливаем…' : 'Остановить расчёт'}</button>}
       {(run.status === 'failed' || run.status === 'cancelled') && <NavLink className="button" to="/runs/new">Создать новый план</NavLink>}
-      {!meta.features.run_execution && <div className="notice">Расчёты пока недоступны на сервере. План сохранён; запуск появится после подключения расчётов.</div>}
+      {!meta.features.run_execution && <div className="notice">Расчёты пока недоступны для новых запусков. Сохранённые данные и остановка активных расчётов остаются доступны.</div>}
       {run.error && <div className="notice error" role="alert">{run.error.message}</div>}
       {active && <div className="run-progress"><div><span>{cancelled ? 'Ожидаем подтверждение остановки' : run.progress?.stage || 'Ожидаем данные о ходе расчёта'}</span><span>{percent != null ? `${formatNumber(percent)}%` : 'В процессе'}</span></div>
         <div className="progress-track" role="progressbar" aria-label="Прогресс расчёта" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent ?? undefined} aria-valuetext={percent == null ? 'Ожидаем данные' : undefined}>

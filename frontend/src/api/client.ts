@@ -18,7 +18,8 @@ async function request<T>(path: string, init?: RequestInit, csv = false): Promis
   if (init?.signal?.aborted) controller.abort();
   const timeout = window.setTimeout(abort, 15000);
   const headers = new Headers(init?.headers);
-  headers.set('Accept', csv ? 'text/csv' : 'application/json');
+  // DRF negotiates JSON errors before the streaming CSV view executes.
+  headers.set('Accept', csv ? 'text/csv, application/json' : 'application/json');
   try {
     if (init?.method === 'POST') {
       headers.set('Content-Type', 'application/json');

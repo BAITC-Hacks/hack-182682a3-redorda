@@ -76,6 +76,21 @@ describe('пользовательский сценарий', () => {
     const count = calls.length; await tick(); expect(calls).toHaveLength(count);
   });
 
+  it('читает сохранённый результат и журнал, когда новые запуски отключены', async () => {
+    enabled = false; status = 'completed'; open();
+    expect(await screen.findByRole('table', { name: 'Выбранные кампании' })).toHaveTextContent('tariff_4');
+    expect(screen.getByText('Пилот завершён')).toBeInTheDocument();
+  });
+
+  it('разрешает остановить активный расчёт, когда новые запуски отключены', async () => {
+    enabled = false; status = 'running'; open();
+    const button = await screen.findByRole('button', { name: 'Остановить расчёт' });
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить остановку' }));
+    await waitFor(() => expect(calls.some(call => call.path.endsWith('/cancel/'))).toBe(true));
+  });
+
   it('сохраняет ключ запуска при потере ответа и повторном открытии страницы', async () => {
     override = path => path.endsWith('/start/') ? Promise.reject(new TypeError('Failed to fetch')) : undefined;
     const view = render(<MemoryRouter initialEntries={['/runs/plan-1']}><App /></MemoryRouter>);
@@ -182,6 +197,8 @@ describe('пользовательский сценарий', () => {
     override = path => path.endsWith('/export/') ? new Response('campaign_name,channel\nТест,sms', { headers: { 'Content-Type': 'text/csv' } }) : undefined;
     fireEvent.click(screen.getByRole('button', { name: 'Скачать CSV' }));
     await waitFor(() => expect(click).toHaveBeenCalledOnce());
+    const exportCall = calls.find(call => call.path.endsWith('/export/'));
+    expect(new Headers(exportCall?.init?.headers).get('Accept')).toBe('text/csv, application/json');
     expect(create.mock.calls[0][0]).toBeInstanceOf(Blob);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument(); click.mockRestore();
   });

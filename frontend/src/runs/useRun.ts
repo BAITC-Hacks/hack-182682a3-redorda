@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import type { Run, RunEvent, RunResults } from '../api/types';
 import { isActive } from './presentation';
 
-export function useRun(id: string, execution: boolean) {
+export function useRun(id: string) {
   const [run, setRun] = useState<Run | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [results, setResults] = useState<RunResults | null>(null);
@@ -31,7 +31,7 @@ export function useRun(id: string, execution: boolean) {
         failures.push(`Не удалось обновить план. ${message(reason)}`);
       }
       if (controller.signal.aborted) return;
-      if (latest && latest.status !== 'draft' && execution) {
+      if (latest && latest.status !== 'draft') {
         // Drain every page, including final events after the run finishes.
         try {
           let more = true;
@@ -46,7 +46,7 @@ export function useRun(id: string, execution: boolean) {
           }
         } catch (reason) { failures.push(`Не удалось обновить журнал. ${message(reason)}`); }
       }
-      if (latest?.status === 'completed' && execution) {
+      if (latest?.status === 'completed') {
         try {
           const value = await api.results(id, controller.signal);
           if (!controller.signal.aborted) setResults(value);
@@ -60,7 +60,7 @@ export function useRun(id: string, execution: boolean) {
     setLoading(true);
     void refresh();
     return () => { controller.abort(); window.clearTimeout(timer); };
-  }, [id, execution, revision]);
+  }, [id, revision]);
 
   // The parent keys this hook's component by run ID, clearing its state on navigation.
   const accept = (value: Run) => { lastRun.current = value; setRun(value); retry(); };
