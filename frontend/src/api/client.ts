@@ -1,10 +1,14 @@
-import type { Dataset, Meta, Page, Run, RunEvent, RunInput, RunResults } from './types';
+import type { Dataset, Meta, Page, Run, RunEvent, RunInput, RunResults, Session } from './types';
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string, public fields: Record<string, unknown> = {}) {
+  constructor(public status: number, message: string, public fields: Record<string, unknown> = {},
+    public code = '') {
     super(message);
   }
 }
+
+let csrfToken: string | null = null;
+const unauthorizedListeners = new Set<() => void>();
 
 async function request<T>(path: string, init?: RequestInit, csv = false): Promise<T> {
   const controller = new AbortController();
@@ -14,19 +18,18 @@ async function request<T>(path: string, init?: RequestInit, csv = false): Promis
   const timeout = window.setTimeout(abort, 15000);
   const headers = new Headers(init?.headers);
   headers.set('Accept', csv ? 'text/csv' : 'application/json');
-  if (init?.method === 'POST') {
-    headers.set('Content-Type', 'application/json');
-    const csrf = document.cookie.split('; ').find(value => value.startsWith('csrftoken='))?.slice(10);
-    if (csrf) headers.set('X-CSRFToken', decodeURIComponent(csrf));
-  }
   try {
+    if (init?.method === 'POST') {
+      headers.set('Content-Type', 'application/json');
+      headers.set('X-CSRFToken', csrfToken || await csrf());
+    }
     const response = await fetch(`/api/v1/${path}`, { ...init, headers, signal: controller.signal, credentials: 'same-origin' });
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
-      const fallback = response.status === 403
-        ? 'Запись недоступна. Проверьте доступ к приложению: публичный сайт пока работает только для чтения.'
-        : 'Не удалось выполнить запрос. Попробуйте ещё раз.';
-      throw new ApiError(response.status, payload?.error?.message || fallback, payload?.error?.fields || {});
+      const code = payload?.error?.code || '';
+      if (code === 'not_authenticated') unauthorizedListeners.forEach(listener => listener());
+      if (code === 'csrf_failed' || code === 'permission_denied') csrfToken = null;
+      throw new ApiError(response.status, payload?.error?.message || 'Не удалось выполнить запрос. Попробуйте ещё раз.', payload?.error?.fields || {}, code);
     }
     if (csv) {
       if (!response.headers.get('Content-Type')?.toLowerCase().includes('text/csv')) {
@@ -36,6 +39,7 @@ async function request<T>(path: string, init?: RequestInit, csv = false): Promis
     }
     const payload = await response.json().catch(() => null);
     if (payload === null) throw new ApiError(502, 'Сервер вернул некорректный ответ.');
+    if (typeof payload?.csrf_token === 'string') csrfToken = payload.csrf_token;
     return payload as T;
   } catch (error) {
     if (error instanceof ApiError || init?.signal?.aborted) throw error;
@@ -48,7 +52,25 @@ async function request<T>(path: string, init?: RequestInit, csv = false): Promis
   }
 }
 
+async function csrf(): Promise<string> {
+  const result = await request<{ csrf_token: string }>('auth/csrf/');
+  csrfToken = result.csrf_token;
+  return csrfToken;
+}
+
 export const api = {
+  me: () => request<Session>('auth/me/'),
+  login: async (username: string, password: string) => {
+    await csrf();
+    return request<Session>('auth/login/', {
+      method: 'POST', body: JSON.stringify({ username, password }),
+    });
+  },
+  logout: () => request<Session>('auth/logout/', { method: 'POST' }),
+  onUnauthorized: (listener: () => void) => {
+    unauthorizedListeners.add(listener);
+    return () => { unauthorizedListeners.delete(listener); };
+  },
   meta: () => request<Meta>('meta/'),
   dataset: () => request<Dataset>('datasets/current/'),
   runs: (page = 1) => request<Page<Run>>(`runs/?page=${page}`),

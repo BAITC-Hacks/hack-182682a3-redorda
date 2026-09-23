@@ -153,3 +153,9 @@ export interface Meta {
   channel_costs: Record<string, number>;
   features: { run_execution: boolean; openai_strategy: boolean; csv_export: boolean };
 }
+
+export interface Session {
+  authenticated: boolean;
+  user: { id: number; username: string; is_staff: boolean } | null;
+  csrf_token?: string;
+}
