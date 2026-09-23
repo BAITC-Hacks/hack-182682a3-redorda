@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useParams } from 'react-router-dom';
 import { Download, Play, RefreshCw, Square } from 'lucide-react';
-import { api } from '../api/client';
-import { mergeEvents, nextEventCursor, startKeyForRun } from '../api/run-state';
-import type { JsonValue, Meta, Run, RunEvent, RunResult } from '../api/types';
+import { useRun } from '../state/RunContext';
+import type { ActorId, CommandType, JsonValue, Meta, Run, RunEvent, RunResult, TeamArtifact, TeamTask } from '../api/types';
+import './RunDetail.css';
 
 const format = (value: unknown) => typeof value === 'number' || typeof value === 'string'
   ? (Number.isFinite(Number(value)) ? new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
@@ -85,110 +85,146 @@ function Results({ result, canExport, onExport, exporting }: {
   </>;
 }
 
-function RunWorkspace({ id, meta }: { id: string; meta: Meta }) {
-  const [run, setRun] = useState<Run | null>(null);
-  const [events, setEvents] = useState<RunEvent[]>([]);
-  const [result, setResult] = useState<RunResult | null>(null);
-  const [loadError, setLoadError] = useState<unknown>(null);
-  const [actionError, setActionError] = useState<unknown>(null);
-  const [action, setAction] = useState<'start' | 'cancel' | 'export' | null>(null);
-  const [refresh, setRefresh] = useState(0);
-  const cursor = useRef(0);
-  const resultLoaded = useRef(false);
-  const actionPending = useRef(false);
+const actorLabels: Record<ActorId, string> = {
+  lead: 'Бек · руководитель', analyst: 'Дана · аналитик', finance: 'Дана · финансист',
+  experiment: 'Айя · экспериментатор', control: 'Жан · контролёр',
+};
+const taskLabels: Record<TeamTask['status'], string> = {
+  pending: 'Ожидает', running: 'В работе', completed: 'Завершено', failed: 'Ошибка', cancelled: 'Отменено',
+};
+const channels = ['push', 'sms', 'digital_ads', 'call'] as const;
 
-  useEffect(() => {
-    const controller = new AbortController();
-    let alive = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    setLoadError(null);
-    async function poll() {
-      try {
-        const current = await api.run(id, controller.signal);
-        if (!alive) return;
-        setRun(current);
-        let more = false;
-        for (let pageNumber = 0; pageNumber < 5; pageNumber += 1) {
-          const page = await api.events(id, cursor.current, controller.signal);
-          if (!alive) return;
-          cursor.current = nextEventCursor(cursor.current, page);
-          setEvents(previous => mergeEvents(previous, page.results));
-          more = page.has_more;
-          if (!more) break;
-        }
-        if (current.status === 'completed' && !resultLoaded.current) {
-          const output = await api.results(id, controller.signal);
-          if (!alive) return;
-          resultLoaded.current = true;
-          setResult(output);
-        }
-        if (alive && (more || current.status === 'queued' || current.status === 'running')) {
-          timer = setTimeout(poll, 2000);
-        }
-      } catch (error) { if (alive && !controller.signal.aborted) setLoadError(error); }
-    }
-    void poll();
-    return () => { alive = false; controller.abort(); if (timer) clearTimeout(timer); };
-  }, [id, refresh]);
+function jsonDisplay(value: unknown) {
+  return value == null ? 'Нет данных' : JSON.stringify(value, null, 2);
+}
 
-  async function perform(kind: 'start' | 'cancel' | 'export') {
-    if (actionPending.current) return;
-    actionPending.current = true;
-    setAction(kind); setActionError(null);
-    try {
-      if (kind === 'export') {
-        const blob = await api.exportRun(id);
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url; anchor.download = `campaigns-${id}.csv`;
-        document.body.appendChild(anchor); anchor.click(); anchor.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-      } else {
-        const current = kind === 'start' ? await api.startRun(id, startKeyForRun(id)) : await api.cancelRun(id);
-        setRun(current);
-      }
-    } catch (error) { setActionError(error); }
-    finally {
-      actionPending.current = false; setAction(null);
-      if (kind !== 'export') setRefresh(value => value + 1);
+function TeamView({ petHomeRef }: { petHomeRef?: (node: HTMLDivElement | null) => void }) {
+  const { run, team, teamUnavailable, events, command, commandError, sendCommand } = useRun();
+  const [selectedTask, setSelectedTask] = useState<string | null>(null);
+  const [campaignId, setCampaignId] = useState('');
+  const [planName, setPlanName] = useState('');
+  const [budget, setBudget] = useState('');
+  const [allowedChannels, setAllowedChannels] = useState<string[]>([]);
+  const [commandType, setCommandType] = useState<CommandType>('explain');
+  const [formError, setFormError] = useState('');
+  const tasks = team?.tasks || [];
+  const artifacts = team?.artifacts || [];
+  const activeTask = tasks.find(task => task.id === selectedTask) || null;
+  const evidence = activeTask ? artifacts.filter(artifact => activeTask.evidence_ids.includes(artifact.id)) : [];
+  const taskFailure = activeTask ? [...events].reverse().find(event => event.kind === 'task_failed' && event.payload.task_id === activeTask.id) : null;
+  const handoffs = events.filter(event => event.kind === 'task_handoff');
+  const available = team?.available_commands || [];
+  const constraints = () => ({ ...(budget.trim() ? { budget: budget.trim() } : {}),
+    ...(allowedChannels.length ? { allowed_channels: allowedChannels } : {}) });
+  async function submit() {
+    setFormError('');
+    if (!available.includes(commandType)) return;
+    if (commandType === 'explain' && !campaignId.trim()) { setFormError('Укажите ID кампании из сохранённого результата.'); return; }
+    if (commandType === 'create_plan' && !planName.trim()) { setFormError('Укажите название нового плана.'); return; }
+    if (budget.trim() && (!/^\d+(?:\.\d{1,2})?$/.test(budget.trim()) || Number(budget) <= 0 || Number(budget) > 100000)) {
+      setFormError('Бюджет должен быть больше 0 и не больше 100000.'); return;
     }
+    const parameters = commandType === 'explain' ? { campaign_id: campaignId.trim() }
+      : commandType === 'create_plan' ? { name: planName.trim(), constraints: constraints() }
+      : { constraints: constraints() };
+    await sendCommand(commandType, parameters);
   }
+  return <section className="live-team" aria-label="Живая команда">
+    <div className="section-heading"><div><h2>Живая команда</h2><p className="subtle">{run ? `План: ${run.name}` : 'Выберите план, чтобы открыть команду.'}</p></div>
+      <span className="badge">{teamUnavailable ? 'Данные команды пока недоступны' : team ? `${tasks.length} задач` : 'Загружаем команду'}</span></div>
+    <div ref={petHomeRef} className="pet-office-home" />
+    {teamUnavailable && <div className="notice">Сервер пока не отдаёт задачи и команды для этого запуска. Расчёт и результаты доступны ниже.</div>}
+    {team && <>
+      <div className="live-grid"><div className="panel"><h3>Задачи</h3>
+        {tasks.length ? <div className="task-list">{tasks.map(task => <button type="button" className={`task-item ${selectedTask === task.id ? 'active' : ''}`} key={task.id} onClick={() => setSelectedTask(task.id)}>
+          <span><strong>{task.title}</strong><small>{actorLabels[task.actor_id]} · {taskLabels[task.status]}</small></span><span aria-hidden="true">→</span>
+        </button>)}</div> : <p className="subtle">Задач пока нет. Команда ожидает запуска или первого события.</p>}
+      </div><div className="panel"><h3>Входные данные и доказательства</h3>
+        {!activeTask ? <p className="subtle">Выберите задачу, чтобы посмотреть сохранённый результат.</p> : <>
+          <p><strong>{activeTask.title}</strong><br /><span className="subtle">{actorLabels[activeTask.actor_id]} · {taskLabels[activeTask.status]}</span></p>
+          {taskFailure && <div className="notice error" role="alert">{String(taskFailure.payload.reason || taskFailure.payload.error || 'Задача завершилась с ошибкой.')}</div>}
+          <p className="subtle">Входные данные задачи: {activeTask.evidence_ids.length ? activeTask.evidence_ids.join(', ') : 'не указаны'}</p>
+          {evidence.map(artifact => <ArtifactView key={`evidence-${artifact.id}`} artifact={artifact} />)}
+          {artifacts.filter(artifact => activeTask.artifact_ids.includes(artifact.id)).map(artifact => <ArtifactView key={artifact.id} artifact={artifact} />)}
+          {activeTask.artifact_ids.length === 0 && <p className="subtle">Результат пока не сохранён.</p>}
+        </>}
+      </div></div>
+      <div className="panel handoff-panel"><h3>Передачи между участниками</h3>
+        {handoffs.length ? <ol>{handoffs.map(event => { const from = event.payload.from_actor as ActorId; const to = event.payload.to_actor as ActorId;
+          return <li key={event.id}><strong>{actorLabels[from] || String(from || 'Участник')} → {actorLabels[to] || String(to || 'Участник')}</strong>
+            <span className="subtle"> · {new Date(event.created_at).toLocaleTimeString('ru-RU')}</span>
+            {typeof event.payload.to_task_id === 'string' && <button className="handoff-link" onClick={() => setSelectedTask(String(event.payload.to_task_id))}>Открыть задачу</button>}
+          </li>; })}</ol> : <p className="subtle">Подтверждённых передач пока нет.</p>}
+      </div>
+      <div className="panel command-panel"><h3>Обратиться к команде</h3>
+        <p className="subtle">Команды используют сохранённые данные этого плана. Доступность определяет сервер.</p>
+        <div className="command-tabs" role="group" aria-label="Команда">
+          {(['explain', 'compare', 'create_plan'] as CommandType[]).map(type => <button type="button" key={type} className={`button ${commandType === type ? 'primary' : ''}`} disabled={!available.includes(type)} onClick={() => setCommandType(type)}>{type === 'explain' ? 'Объяснить' : type === 'compare' ? 'Сравнить' : 'Создать план'}</button>)}
+        </div>
+        {available.length === 0 && <p className="subtle">Сейчас доступных команд нет.</p>}
+        {commandType === 'explain' ? <label>ID кампании<input value={campaignId} onChange={event => setCampaignId(event.target.value)} placeholder="ID из сохранённого результата" disabled={!available.includes('explain')} /></label> : <>
+          {commandType === 'create_plan' && <label>Название нового плана<input value={planName} onChange={event => setPlanName(event.target.value)} disabled={!available.includes('create_plan')} /></label>}
+          <label>Бюджет нового ограничения, у. е. (необязательно)<input inputMode="decimal" value={budget} onChange={event => setBudget(event.target.value)} placeholder="Например, 50000" disabled={!available.includes(commandType)} /></label>
+          <fieldset><legend>Доступные каналы (необязательно)</legend><div className="channel-options">{channels.map(channel => <label key={channel}><input type="checkbox" checked={allowedChannels.includes(channel)} disabled={!available.includes(commandType)} onChange={event => setAllowedChannels(previous => event.target.checked ? [...previous, channel] : previous.filter(item => item !== channel))} />{channelLabels[channel]}</label>)}</div></fieldset>
+        </>}
+        {formError && <div className="notice error" role="alert">{formError}</div>}
+        {commandError != null && <Failure error={commandError} />}
+        <button className="button primary" type="button" disabled={!available.includes(commandType) || command?.status === 'queued' || command?.status === 'running'} onClick={() => void submit()}>Отправить команду</button>
+        {command && <div className="command-response" role="status"><strong>Ответ команды · {command.status === 'completed' ? 'готово' : command.status === 'failed' ? 'ошибка' : 'в работе'}</strong>
+          {command.error ? <p>{command.error.message}</p> : command.result != null ? <pre className="result-json">{jsonDisplay(command.result)}</pre> : <p className="subtle">Ожидаем ответ сервера.</p>}
+          {command.type === 'create_plan' && command.status === 'completed' && typeof command.result === 'object' && command.result && !Array.isArray(command.result) && typeof command.result.run_id === 'string' && <NavLink className="button" to={`/runs/${command.result.run_id}`}>Открыть новый план</NavLink>}
+        </div>}
+      </div>
+    </>}
+  </section>;
+}
 
-  const pilots = events.filter(event => event.kind === 'pilot_completed');
+function ArtifactView({ artifact }: { artifact: TeamArtifact }) {
+  return <div className="artifact"><strong>{artifact.title}</strong><small>{artifact.type} · {artifact.id}</small>
+    <pre className="result-json">{jsonDisplay(artifact.data)}</pre>
+    <p className="subtle">Доказательства: {artifact.evidence_ids.length ? artifact.evidence_ids.join(', ') : 'не указаны'}</p>
+  </div>;
+}
+
+export default function RunDetail({ meta, petHomeRef }: { meta: Meta; petHomeRef?: (node: HTMLDivElement | null) => void }) {
+  const { id } = useParams();
+  const { selectedId, select, run, events, result, loadError, actionError, action, refresh, perform } = useRun();
+  const [mode, setMode] = useState<'desk' | 'live'>('desk');
+  useEffect(() => { if (id && selectedId !== id) select(id); }, [id, selectedId, select]);
+  const current = selectedId === id ? run : null;
+  const pilots = selectedId === id ? events.filter(event => event.kind === 'pilot_completed') : [];
   return <>
     <NavLink className="back-link" to="/runs">← Все планы</NavLink>
-    {loadError !== null && <><Failure error={loadError} /><button className="button" onClick={() => setRefresh(value => value + 1)}><RefreshCw size={16} />Обновить состояние</button></>}
-    {!run ? !loadError && <p role="status">Загружаем план…</p> : <>
-      <div className="section-heading"><div><h1>{run.name}</h1><p className="subtle run-subtitle">{run.strategy === 'openai' ? 'Гипотезы OpenAI + расчётная стратегия' : 'Расчётная стратегия'} · Seed {run.seed}</p></div>
-        <span className={`badge status-${run.status}`}>{statuses[run.status]}</span></div>
-      <div className="stats-grid"><article className="stat"><div className="stat-label">Бюджет</div><strong>{format(run.budget)}</strong><small>у. е. · остаток {run.progress.spent_budget === null ? '—' : format(Math.max(0, Number(run.budget) - Number(run.progress.spent_budget)))}</small></article>
-        <article className="stat"><div className="stat-label">Контакты</div><strong>{format(run.progress.used_contacts)}</strong><small>Лимит {format(run.max_contacts)} · включая пилоты</small></article>
-        <article className="stat"><div className="stat-label">Завершено пилотов</div><strong>{run.progress.completed_pilots} / {run.max_pilots}</strong><small>Агент может закончить раньше лимита</small></article></div>
-      {actionError !== null && <Failure error={actionError} />}
+    <div className="run-mode-switch" role="group" aria-label="Представление запуска"><button type="button" className={`button ${mode === 'desk' ? 'primary' : ''}`} aria-pressed={mode === 'desk'} onClick={() => setMode('desk')}>Рабочий стол</button>
+      <button type="button" className={`button ${mode === 'live' ? 'primary' : ''}`} aria-pressed={mode === 'live'} onClick={() => setMode('live')}>Живая команда</button></div>
+    {loadError != null && <><Failure error={loadError} /><button className="button" onClick={refresh}><RefreshCw size={16} />Обновить состояние</button></>}
+    {!current ? !loadError && <p role="status">Загружаем план…</p> : <>
+      <div className="section-heading"><div><h1>{current.name}</h1><p className="subtle run-subtitle">{current.strategy === 'openai' ? 'Гипотезы OpenAI + расчётная стратегия' : 'Расчётная стратегия'} · Seed {current.seed}</p></div>
+        <span className={`badge status-${current.status}`}>{statuses[current.status]}</span></div>
+      <div className="stats-grid"><article className="stat"><div className="stat-label">Бюджет</div><strong>{format(current.budget)}</strong><small>у. е. · расход {format(current.progress.spent_budget)} · остаток {current.progress.spent_budget === null ? '—' : format(Math.max(0, Number(current.budget) - Number(current.progress.spent_budget)))}</small></article>
+        <article className="stat"><div className="stat-label">Контакты</div><strong>{format(current.progress.used_contacts)}</strong><small>Лимит {format(current.max_contacts)} · включая пилоты</small></article>
+        <article className="stat"><div className="stat-label">Завершено пилотов</div><strong>{current.progress.completed_pilots} / {current.max_pilots}</strong><small>Агент может закончить раньше лимита</small></article></div>
+      {actionError != null && <Failure error={actionError} />}
       {events.some(event => event.kind === 'fallback_used') && <div className="notice">Гипотезы OpenAI недоступны. Агент продолжает работу с расчётными гипотезами.</div>}
       <div className="panel run-control">
-        {run.status === 'draft' ? <><div><h2>План готов к запуску</h2><p>{meta.features.run_execution ? 'Агент проверит гипотезы на пилотах и соберёт кампании в пределах бюджета.' : 'Расчёты временно отключены на сервере.'}</p></div>
+        {current.status === 'draft' ? <><div><h2>План готов к запуску</h2><p>{meta.features.run_execution ? 'Агент проверит гипотезы на пилотах и соберёт кампании в пределах бюджета.' : 'Расчёты временно отключены на сервере.'}</p></div>
           <button className="button primary" onClick={() => void perform('start')} disabled={action !== null || !meta.features.run_execution}><Play size={16} />{action === 'start' ? 'Запускаем…' : 'Запустить агента'}</button></> : <>
-          <div className="run-progress"><div className="section-heading"><h2>{run.progress.stage === 'finalizing' ? 'Сохраняем результаты' : statuses[run.status]}</h2><span>{run.progress.percent}%</span></div>
-            <progress value={run.progress.percent} max={100} aria-label="Прогресс расчёта" />
-            <p>{run.status === 'queued' ? 'Ожидаем свободный процесс расчёта.' : run.status === 'running'
-              ? run.cancellation_requested ? 'Отмена запрошена. Завершаем текущий шаг.' : 'Проверяем гипотезы. Прогресс обновляется каждые 2 секунды.'
-              : run.status === 'cancelled' ? 'Расчёт остановлен. Выполненные пилоты сохранены.' : run.status === 'failed' ? run.error?.message || 'Расчёт завершился с ошибкой.' : 'Кампании и результаты сохранены.'}</p>
+          <div className="run-progress"><div className="section-heading"><h2>{current.progress.stage === 'finalizing' ? 'Сохраняем результаты' : statuses[current.status]}</h2><span>{current.progress.percent}%</span></div>
+            <progress value={current.progress.percent} max={100} aria-label="Прогресс расчёта" />
+            <p>{current.status === 'queued' ? 'Ожидаем свободный процесс расчёта.' : current.status === 'running'
+              ? current.cancellation_requested ? 'Отмена запрошена. Завершаем текущий шаг.' : 'Проверяем гипотезы. Прогресс обновляется каждые 2 секунды.'
+              : current.status === 'cancelled' ? 'Расчёт остановлен. Выполненные пилоты сохранены.' : current.status === 'failed' ? current.error?.message || 'Расчёт завершился с ошибкой.' : 'Кампании и результаты сохранены.'}</p>
           </div>
-          {['queued', 'running'].includes(run.status) && <button className="button" onClick={() => void perform('cancel')} disabled={action !== null || run.cancellation_requested}><Square size={15} />{action === 'cancel' ? 'Отменяем…' : run.cancellation_requested ? 'Ожидаем остановки' : 'Отменить расчёт'}</button>}
+          {['queued', 'running'].includes(current.status) && <button className="button" onClick={() => void perform('cancel')} disabled={action !== null || current.cancellation_requested}><Square size={15} />{action === 'cancel' ? 'Отменяем…' : current.cancellation_requested ? 'Ожидаем остановки' : 'Отменить расчёт'}</button>}
         </>}
       </div>
+      {mode === 'live' && <TeamView petHomeRef={petHomeRef} />}
       {result && <Results result={result} canExport={meta.features.csv_export} exporting={action === 'export'} onExport={() => void perform('export')} />}
-      {run.status !== 'draft' && <section className="pilot-section"><div className="section-heading"><h2>Журнал пилотов</h2><span className="subtle">{pilots.length} подтверждено</span></div>
+      {current.status !== 'draft' && <section className="pilot-section"><div className="section-heading"><h2>Журнал пилотов</h2><span className="subtle">{pilots.length} подтверждено</span></div>
         {pilots.length === 0 ? <div className="panel"><p>Завершённых пилотов пока нет.</p></div> : <div className="table-wrap"><table><thead><tr><th>№</th><th>Гипотеза</th><th>Канал</th><th>Запрошено</th><th>Контакты</th><th>Стоимость, у. е.</th><th>Наблюдаемый эффект</th><th>Время</th></tr></thead><tbody>
           {pilots.map(event => <PilotRow key={event.id} event={event} />)}
         </tbody></table></div>}
       </section>}
     </>}
   </>;
-}
-
-export default function RunDetail({ meta }: { meta: Meta }) {
-  const { id } = useParams();
-  return <RunWorkspace key={id} id={id!} meta={meta} />;
 }
