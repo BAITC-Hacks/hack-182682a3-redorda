@@ -7,6 +7,7 @@ import type { Dataset as DatasetType, Meta, Page, Run } from './api/types';
 import CountUp from './components/react-bits/CountUp';
 import SpotlightCard from './components/react-bits/SpotlightCard';
 import DataPage from './components/DataPage';
+import AgentPets from './components/pets/AgentPets';
 
 const number = (value: number | string) => new Intl.NumberFormat('ru-RU', {
   maximumFractionDigits: 0,
@@ -21,12 +22,13 @@ function ErrorMessage({ error }: { error: unknown }) {
     ? error.message : 'Не удалось получить данные.'}</div>;
 }
 
-function Overview({ dataset, meta }: { dataset: DatasetType | null; meta: Meta }) {
+function Overview({ dataset, meta, petHomeRef }: { dataset: DatasetType | null; meta: Meta; petHomeRef: (node: HTMLDivElement | null) => void }) {
   return <>
     <div className="page-heading"><div><span className="eyebrow">ЦЕНТР УПРАВЛЕНИЯ КАМПАНИЯМИ</span>
       <h1>Каждое решение<br />должно окупаться<span className="yellow-dot">.</span></h1>
       <p>Изучайте аудиторию, проверяйте гипотезы и находите<br className="desktop" /> кампании с наибольшим эффектом.</p>
     </div><div className="hero-symbol" aria-hidden="true"><Signal size={88} strokeWidth={1.4} /></div></div>
+    <div ref={petHomeRef} className="pet-office-home" />
     <div className="stats-grid">
       <Stat icon={<Users size={18} />} label="Абоненты в базе" value={dataset ? <CountUp to={dataset.customer_count} /> : '—'} note={dataset ? 'Набор данных импортирован' : 'Ожидается импорт данных'} />
       <Stat icon={<Wallet size={18} />} label="Бюджет кампаний" value={number(meta.limits.budget)} note="у. е. · включая пилоты" />
@@ -112,6 +114,7 @@ function RunDetail() {
 }
 
 export default function App() {
+  const [petHome, setPetHome] = useState<HTMLDivElement | null>(null);
   const [dataset, setDataset] = useState<DatasetType | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -131,12 +134,12 @@ export default function App() {
     </nav><div className="sidebar-bottom"><span className="team-avatar">R</span><div><strong>Команда RedOrda</strong><small>Рабочее пространство</small></div></div></aside>
     <div className="main-shell"><header><span>Маркетинговая аналитика</span><div className="connection"><i className={meta ? 'connected' : ''} />{meta ? 'Сервис доступен' : error ? 'Нет соединения' : 'Подключение…'}</div></header>
       <main>{error ? <><ErrorMessage error={error} /><button className="button" onClick={() => setRetry(n => n + 1)}><RefreshCw size={16} />Повторить</button></> : !meta ? <p role="status">Подключаемся к сервису…</p> : <Routes>
-        <Route path="/" element={<Overview dataset={dataset} meta={meta} />} />
+        <Route path="/" element={<Overview dataset={dataset} meta={meta} petHomeRef={setPetHome} />} />
         <Route path="/data" element={<DataPage dataset={dataset} onImported={setDataset} />} />
         <Route path="/runs" element={<RunsPage />} />
         <Route path="/runs/new" element={<NewRun dataset={dataset} meta={meta} />} />
         <Route path="/runs/:id" element={<RunDetail />} />
         <Route path="*" element={<><h1>Страница не найдена</h1><NavLink to="/">На главную</NavLink></>} />
       </Routes>}</main><footer>RedOrda © 2026 <span>HackAlem AI · Beeline Tariff Marketing Campaigns</span></footer>
-    </div></div>;
+    </div><AgentPets home={petHome} /></div>;
 }

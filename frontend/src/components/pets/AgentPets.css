@@ -1,0 +1,144 @@
+.agent-pets{--pet-size:84px;position:fixed;inset:0;z-index:40;pointer-events:none;isolation:isolate}
+.pet-stage{position:absolute;left:252px;right:calc(24px + var(--pet-size));top:150px;bottom:calc(76px + var(--pet-size))}
+.pet-actor{position:absolute;left:0;top:0;width:var(--pet-size);height:var(--pet-size);padding:0;border:0;background:transparent;pointer-events:auto;touch-action:manipulation;will-change:transform;border-radius:28px;color:#332e42;-webkit-user-select:none;user-select:none}
+.pet-avatar{display:block;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 3px 2px #49304e0d)}
+.pet-actor .pet-body{transform-origin:44px 75px;animation:pet-breathe 2.8s ease-in-out infinite;animation-delay:var(--pet-delay)}
+.pet-eyes{transform-origin:44px 47px;animation:pet-blink 5.7s infinite;animation-delay:var(--pet-delay)}
+.pet-actor.is-walking .pet-body{animation:pet-bounce .32s ease-in-out infinite;animation-delay:var(--pet-delay)}
+.pet-actor.is-walking .pet-foot-left{animation:pet-step .32s ease-in-out infinite alternate;transform-origin:30px 75px}
+.pet-actor.is-walking .pet-foot-right{animation:pet-step .32s ease-in-out infinite alternate-reverse;transform-origin:58px 75px}
+.pet-actor.is-walking .pet-arm{animation:pet-arm-swing .32s ease-in-out infinite alternate;transform-origin:44px 45px}
+.pet-actor.is-walking .pet-arm-right{animation-direction:alternate-reverse}
+.pet-name{position:absolute;left:50%;top:100%;transform:translate(-50%,-2px);padding:2px 8px;border:1px solid #eae7ef;border-radius:8px;font-size:10px;font-weight:800;line-height:1.6;background:#ffffffeb;color:#534961;opacity:0;transition:opacity .15s;white-space:nowrap}
+.pet-actor:hover .pet-name,.pet-actor:focus-visible .pet-name,.pet-actor.is-waving .pet-name{opacity:1}
+.pet-bubble{position:absolute;bottom:calc(100% + 4px);left:50%;transform:translate(-50%,5px) scale(.9);max-width:160px;width:max-content;padding:8px 11px;background:#ffffffed;backdrop-filter:blur(8px);border:1px solid #e4dfef;border-radius:13px 13px 13px 3px;box-shadow:0 4px 16px #38214509;color:#554864;font-size:10px;font-weight:700;line-height:1.5;text-align:center;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none}
+.pet-bubble.is-visible{opacity:1;transform:translate(-50%,0) scale(1)}
+.pet-actor.is-waving .pet-arm-right{animation:pet-wave .35s ease-in-out infinite alternate;transform-origin:66px 49px}
+.pet-actor.is-waving .pet-body{animation:pet-happy .6s ease-in-out infinite}
+.pet-prop{position:absolute;pointer-events:none}
+.pet-phone{right:0;top:32%;color:#4e4166;transform:rotate(-22deg);animation:pet-phone .8s ease-in-out infinite alternate}
+.pet-phone i{position:absolute;left:20px;top:1px;width:6px;height:14px;border-right:2px solid var(--pet-color);border-radius:50%;animation:pet-ring 1.5s infinite}
+.pet-phone i:last-child{left:25px;height:20px;top:-2px;animation-delay:.25s}
+.pet-coffee{right:1px;bottom:13px;color:#966a49;background:#fffaf0;border-radius:5px;padding:2px;transform:rotate(-9deg)}
+.pet-coffee i{position:absolute;left:10px;bottom:27px;width:6px;height:12px;border-left:2px solid #bea285;border-radius:50%;animation:pet-steam 1.8s infinite}
+.pet-heart{right:0;top:4px;color:#eb88aa;animation:pet-love 1.6s ease-in-out infinite}
+.pet-parcel{position:absolute;left:0;top:0;display:grid;place-items:center;width:30px;height:35px;background:#fffaf0;border:1.5px solid #d1ac63;border-radius:4px 7px 4px 4px;box-shadow:0 3px 7px #64502016;color:#947443;will-change:transform;pointer-events:none}
+.pet-parcel span{position:absolute;width:7px;height:7px;border-radius:50%;background:#ad94e9;right:3px;bottom:3px;border:1px solid #fff}
+.pet-dock{position:absolute;right:24px;bottom:max(18px,env(safe-area-inset-bottom));pointer-events:auto}
+.pet-dock-bar{display:flex;align-items:center;gap:4px;padding:5px 7px 5px 5px;border:1px solid #e6e1ee;border-radius:19px;background:#fffffff2;backdrop-filter:blur(16px);box-shadow:0 5px 24px #4632550c,0 1px 3px #46325506}
+.pet-dock-toggle{display:flex;align-items:center;gap:9px;padding:3px 5px 3px 3px;border:0;background:transparent;color:#51465d;text-align:left;border-radius:12px}
+.pet-dock-mark{display:grid;place-items:center;width:33px;height:33px;border-radius:11px;background:linear-gradient(135deg,#8aaefa,#b38ee9 45%,#f2b7c1 72%,#f4d362);color:white;box-shadow:inset 0 1px 2px #ffffff7a}
+.pet-dock-toggle strong{display:block;font-size:11px;line-height:1.5;font-weight:800}
+.pet-dock-toggle small{display:block;font-size:9px;line-height:1.6;color:#978c9e}
+.pet-dock-toggle>svg{margin-left:10px;transition:transform .2s;color:#9e92a7}
+.pet-chevron-open{transform:rotate(180deg)}
+.pet-icon-button{display:grid;place-items:center;width:30px;height:30px;border:0;background:transparent;color:#8d8099;border-radius:10px;padding:0}
+.pet-icon-button:hover{background:#f3eff8;color:#76608e}
+.pet-pause{border-left:1px solid #eee9f2;border-radius:0 10px 10px 0;width:33px}
+.pet-panel{position:absolute;right:0;bottom:calc(100% + 12px);width:340px;max-width:calc(100vw - 32px);padding:19px;border:1px solid #e7e0ef;border-radius:22px;background:#fffffff7;backdrop-filter:blur(20px);box-shadow:0 12px 60px #4532531a;max-height:calc(100dvh - 100px);overflow:auto}
+.pet-panel-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.pet-panel-heading strong{font-size:14px;letter-spacing:-.35px;color:#483850}
+.pet-panel-heading p{font-size:11px;margin:4px 0 12px;color:#96879e;line-height:1.6}
+.pet-roster{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px 0 15px;border-bottom:1px solid #eee9f3}
+.pet-roster>div{text-align:center}
+.pet-roster .pet-avatar{height:69px;width:66px;margin:0 auto}
+.pet-roster strong{display:block;font-size:11px;color:#55465d;margin-top:5px}
+.pet-roster span{display:block;font-size:8px;color:#968a9e;line-height:1.4;margin-top:3px}
+.pet-panel-caption{font-size:11px;color:#7e6f88;margin:15px 0 9px;line-height:1.5}
+.pet-scene-buttons{display:flex;gap:5px;flex-wrap:wrap}
+.pet-scene-buttons button{display:flex;align-items:center;gap:5px;padding:8px 9px;border:1px solid #e8e0f0;border-radius:10px;background:#f8f5fb;color:#766186;font-size:9px;font-weight:700}
+.pet-scene-buttons button:hover{border-color:#b89ad3;background:#f0e8f8}
+.pet-disclaimer{font-size:9px;line-height:1.6;color:#a297a9;margin:13px 0}
+.pet-motion-note{font-size:10px;line-height:1.6;color:#887294;margin:10px 0}
+.pet-hide-button{width:100%;padding:10px;border:0;border-top:1px solid #eee9f3;background:transparent;color:#91829c;font-size:10px;border-radius:0 0 8px 8px}
+.pet-hide-button:hover{background:#faf7fc;color:#685373}
+.pet-mode-button{width:100%;padding:10px;border:1px solid #e4d9ee;background:#f5effa;color:#715385;font-size:10px;border-radius:9px;margin-bottom:7px}
+.agent-pets button:focus-visible{outline:3px solid #9978c8;outline-offset:3px}
+.agent-pets.is-paused *,.agent-pets.is-paused *::before,.agent-pets.is-paused *::after{animation-play-state:paused!important}
+.pet-office-home:empty{display:none}
+.pet-office-home{margin:30px 0}
+.pet-office{--pet-size:76px;position:relative;border:1px solid #40515a;border-radius:14px;background:#202b35;color:#e1e9e8;overflow:hidden;pointer-events:auto;isolation:isolate}
+.pet-office-header{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:17px 21px;border-bottom:1px solid #40515a}
+.pet-office-header>div:first-child{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.pet-office-logo{font-size:17px;font-weight:800;letter-spacing:-.7px;color:#e6e9dc;white-space:nowrap}
+.pet-office-logo>span{color:#b59bdf}
+.pet-office-subtitle{font-size:10px;color:#98aeb1}
+.pet-office-actions{display:flex;gap:8px;align-items:center;flex-shrink:0}
+.pet-office-actions button{display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #50615f;border-radius:6px;background:#303f46;color:#d1ded5;padding:8px;font-size:10px;line-height:1.4}
+.pet-office-actions button:hover{background:#415154}
+.pet-office-floor{position:relative;height:380px;isolation:isolate;background-color:#293d44;background-image:linear-gradient(90deg,#36505965 1px,transparent 1px),linear-gradient(#36505965 1px,transparent 1px);background-size:48px 32px}
+.pet-office-wall{position:absolute;inset:0 0 auto;height:40px;border-top:8px solid #3c5659;border-bottom:5px solid #707566;background:#314b50;display:flex;align-items:center;justify-content:center;gap:6px}
+.pet-office-wall>span{font-size:11px;font-weight:800;letter-spacing:1px;color:#b9c9c1;margin-right:10px}
+.pet-office-wall>i{width:7px;height:7px;background:#ad98d8;box-shadow:0 0 10px #ad98d82b}
+.pet-office-wall>i:nth-last-child(3){background:#84b5d5}.pet-office-wall>i:nth-last-child(2){background:#e2a3b7}.pet-office-wall>i:last-child{background:#e8cf79}
+.pet-office-furniture{position:absolute;inset:0;pointer-events:none}
+.pet-desk{position:absolute;width:142px;height:100px;z-index:1}
+.pet-desk>span{position:absolute;left:0;right:0;top:-11px;text-align:center;font-family:monospace;font-size:10px;color:#a6bbbf}
+.pet-desk svg{width:100%;height:100%;filter:drop-shadow(7px 6px 0 #162c322b)}
+.pet-desk-0{left:11%;top:63px}.pet-desk-1{right:11%;top:63px}.pet-desk-2{left:11%;bottom:68px}.pet-desk-3{right:11%;bottom:68px}
+.pet-office-rug{position:absolute;left:34%;top:47%;width:32%;height:29%;background:#3c5552;border:5px solid #576453;outline:2px solid #253a40;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:9px;color:#a9beb0;box-shadow:5px 5px 0 #1f333828}
+.pet-office-rug>span{font-family:monospace;font-size:16px;letter-spacing:3px}.pet-office-rug>small{font-size:8px;color:#869f92}
+.pet-plant{position:absolute;top:61px;width:28px;height:45px}.pet-plant-left{left:3%}.pet-plant-right{right:3%}
+.pet-plant i{position:absolute;bottom:20px;left:12px;width:5px;height:25px;background:#6a9879;box-shadow:-8px -5px 0 1px #7ebaaa,7px -13px 0 1px #537c67,-4px -18px 0 0 #9ad0b6}
+.pet-plant b{position:absolute;bottom:0;left:5px;width:21px;height:17px;background:#a49778;border-top:5px solid #c0b494;box-shadow:3px 3px 0 #1e3438}
+.pet-office .pet-stage{left:16px;right:calc(16px + var(--pet-size));top:80px;bottom:calc(26px + var(--pet-size));z-index:2;pointer-events:none}
+.pet-office .pet-actor{border-radius:2px}
+.pet-office .pet-name{opacity:1;color:#d7e3dd;background:#263941d9;border:0;border-radius:0;font-family:monospace;font-size:10px;padding:1px 5px}
+.pet-office .pet-bubble{border-radius:2px;border:2px solid #28343e;background:#f5f1db;color:#34434a;font-size:9px;box-shadow:3px 3px 0 #16293033;backdrop-filter:none;max-width:124px}
+.pet-office .pet-parcel{border-radius:0;background:#fff2c5;border:2px solid #344349}
+.pet-office .pet-phone{color:#dbd4ed}.pet-office .pet-phone i{border-color:#e1cdee}
+.pet-office-footer{padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid #40545b;font-size:11px;line-height:1.6}
+.pet-office-footer>span{display:flex;align-items:center;gap:9px}.pet-office-footer i{height:7px;width:7px;background:#d8eaa2;border-radius:50%;flex-shrink:0}
+.pet-office-footer>small{color:#96a9af;font-size:9px}
+.pet-office.is-paused *{animation-play-state:paused!important}
+.pet-panel.has-office{width:640px}
+.pet-panel.has-office .pet-office{margin-top:7px}
+.pet-panel.has-office .pet-office-subtitle,.pet-panel.has-office .pet-office-footer>small{display:none}
+.pet-panel.has-office .pet-office-floor{height:320px}
+.pet-panel.has-office .pet-desk{width:108px;height:76px}
+.pet-panel.has-office .pet-desk-0,.pet-panel.has-office .pet-desk-1{top:70px}
+.pet-panel.has-office .pet-desk-2,.pet-panel.has-office .pet-desk-3{bottom:55px}
+@keyframes pet-breathe{50%{transform:translateY(1.5px) scaleY(.98)}}
+@keyframes pet-blink{0%,43%,47%,100%{transform:scaleY(1)}45%{transform:scaleY(.1)}}
+@keyframes pet-bounce{0%,100%{transform:translateY(0) rotate(calc(var(--pet-direction,1) * 3deg))}50%{transform:translateY(-5px) rotate(calc(var(--pet-direction,1) * -2deg))}}
+@keyframes pet-step{from{transform:rotate(-17deg) translateY(-2px)}to{transform:rotate(18deg) translateY(1px)}}
+@keyframes pet-arm-swing{to{transform:rotate(12deg)}}
+@keyframes pet-wave{from{transform:rotate(-105deg)}to{transform:rotate(-140deg)}}
+@keyframes pet-happy{50%{transform:translateY(-5px) rotate(-4deg)}}
+@keyframes pet-phone{to{transform:rotate(-12deg) translateY(-2px)}}
+@keyframes pet-ring{0%,100%{opacity:0}40%{opacity:.8}}
+@keyframes pet-steam{to{transform:translateY(-8px);opacity:0}}
+@keyframes pet-love{50%{transform:translateY(-8px) rotate(12deg) scale(1.1)}}
+@media(max-width:1100px){.pet-stage{left:218px;top:130px}}
+@media(max-width:760px){
+  .agent-pets{--pet-size:58px}
+  .pet-stage{left:8px;right:calc(8px + var(--pet-size));top:235px;bottom:calc(72px + var(--pet-size))}
+  .pet-dock{right:12px;bottom:max(12px,env(safe-area-inset-bottom))}
+  .pet-bubble{font-size:8px;max-width:100px;padding:5px 7px;bottom:100%}
+  .pet-phone{right:-4px;transform:scale(.8) rotate(-22deg)}
+  .pet-coffee{right:-4px;bottom:4px;transform:scale(.75)}
+  .pet-parcel{width:23px;height:28px}
+  .pet-parcel svg{width:15px}
+  .pet-name{font-size:9px}
+  .pet-office{--pet-size:56px;border-radius:10px}
+  .pet-office-header{padding:13px 12px;align-items:flex-start}
+  .pet-office-header>div:first-child{gap:3px;flex-direction:column;align-items:flex-start}
+  .pet-office-subtitle{font-size:8px;max-width:145px}
+  .pet-office-logo{font-size:15px}
+  .pet-office-actions{gap:4px}.pet-office-actions button{padding:7px 5px;font-size:8px;gap:3px}
+  .pet-office-actions button>svg{width:12px;height:12px}
+  .pet-office-floor{height:330px;background-size:32px 28px}
+  .pet-desk,.pet-panel.has-office .pet-desk{width:92px;height:65px}
+  .pet-desk-0,.pet-desk-2{left:9%}.pet-desk-1,.pet-desk-3{right:9%}
+  .pet-desk-0,.pet-desk-1{top:72px}.pet-desk-2,.pet-desk-3{bottom:70px}
+  .pet-office-rug{left:32%;width:36%;height:23%;top:48%;border-width:3px;gap:7px}
+  .pet-office-rug>span{font-size:10px;letter-spacing:1px}.pet-office-rug>small{font-size:6px}
+  .pet-plant{transform:scale(.7)}.pet-plant-left{left:0}.pet-plant-right{right:0}
+  .pet-office .pet-stage{left:7px;right:calc(7px + var(--pet-size));top:80px;bottom:calc(24px + var(--pet-size))}
+  .pet-office .pet-bubble{font-size:8px;max-width:76px;padding:4px 6px}
+  .pet-office-footer{padding:12px;font-size:9px}.pet-office-footer>small{display:none}
+  .pet-panel.has-office{padding:12px}.pet-panel.has-office .pet-office-floor{height:300px}
+}
+@media(max-height:550px){.pet-stage{top:110px;bottom:calc(62px + var(--pet-size))}}
+@media(prefers-reduced-motion:reduce){.agent-pets *,.agent-pets *::before,.agent-pets *::after,.pet-office *{animation:none!important;transition:none!important}}
+@media print{.agent-pets,.pet-office-home{display:none}}
