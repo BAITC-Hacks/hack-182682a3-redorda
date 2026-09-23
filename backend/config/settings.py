@@ -12,6 +12,15 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "local-development-only-change-befor
 if not DEBUG and SECRET_KEY == "local-development-only-change-before-deployment":
     raise RuntimeError("Set DJANGO_SECRET_KEY before running with DJANGO_DEBUG=0")
 ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,backend").split(",")
+CSRF_TRUSTED_ORIGINS = [
+    origin for origin in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if origin
+]
+if not DEBUG:
+    # Production listeners are loopback-only, behind our trusted HTTPS proxy.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000
 INSTALLED_APPS = [
     "django.contrib.admin", "django.contrib.auth", "django.contrib.contenttypes",
     "django.contrib.sessions", "django.contrib.messages", "django.contrib.staticfiles",

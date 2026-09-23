@@ -33,3 +33,42 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
+  deploy:
+    needs: [backend, frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Trigger Mac mini deployment
+        env:
+          WEBHOOK_SECRET: ${{ secrets.MACMINI_WEBHOOK_SECRET }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import hmac
+          import json
+          import os
+          import urllib.request
+
+          secret = os.environ['WEBHOOK_SECRET']
+          if not secret:
+              raise SystemExit('MACMINI_WEBHOOK_SECRET is not configured')
+          repository = os.environ['REPOSITORY']
+          body = json.dumps({
+              'ref': 'refs/heads/main',
+              'repository': {'name': repository.split('/')[-1], 'full_name': repository},
+          }).encode()
+          signature = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+          request = urllib.request.Request(
+              'https://hook.1ge.kz/github-webhook', data=body,
+              headers={'Content-Type': 'application/json', 'X-GitHub-Event': 'push',
+                       'X-Hub-Signature-256': 'sha256=' + signature},
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              result = response.read().decode()
+              if response.status != 202 or result != 'accepted':
+                  raise SystemExit(f'Deploy rejected: {response.status} {result}')
+              print('Mac mini accepted deployment; see logs/deploy.log for completion.')
+          PY
