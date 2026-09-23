@@ -126,7 +126,7 @@ paths:
       tags:
       - schema
       security:
-      - {}
+      - cookieAuth: []
       responses:
         '200':
           content:
@@ -147,13 +147,127 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
+  /api/v1/auth/csrf/:
+    get:
+      operationId: v1_auth_csrf_retrieve
+      tags:
+      - auth
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Csrf'
+          description: ''
+  /api/v1/auth/login/:
+    post:
+      operationId: v1_auth_login_create
+      parameters:
+      - in: header
+        name: X-CSRFToken
+        schema:
+          type: string
+        description: Токен из auth/csrf/; после login использовать новый.
+        required: true
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Login'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Login'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Login'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+  /api/v1/auth/logout/:
+    post:
+      operationId: v1_auth_logout_create
+      parameters:
+      - in: header
+        name: X-CSRFToken
+        schema:
+          type: string
+        description: Токен из auth/csrf/; после login использовать новый.
+        required: true
+      tags:
+      - auth
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+  /api/v1/auth/me/:
+    get:
+      operationId: v1_auth_me_retrieve
+      tags:
+      - auth
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+          description: ''
   /api/v1/datasets/current/:
     get:
       operationId: v1_datasets_current_retrieve
       tags:
       - v1
       security:
-      - {}
+      - cookieAuth: []
       responses:
         '200':
           content:
@@ -167,6 +281,7 @@ paths:
       tags:
       - v1
       security:
+      - cookieAuth: []
       - {}
       responses:
         '200':
@@ -181,13 +296,33 @@ paths:
       tags:
       - v1
       security:
-      - {}
+      - cookieAuth: []
       responses:
         '200':
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Meta'
+          description: ''
+  /api/v1/ready/:
+    get:
+      operationId: v1_ready_retrieve
+      tags:
+      - health
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
           description: ''
   /api/v1/runs/:
     get:
@@ -202,7 +337,7 @@ paths:
       tags:
       - v1
       security:
-      - {}
+      - cookieAuth: []
       responses:
         '200':
           content:
@@ -227,7 +362,7 @@ paths:
               $ref: '#/components/schemas/Run'
         required: true
       security:
-      - {}
+      - cookieAuth: []
       responses:
         '201':
           content:
@@ -243,13 +378,12 @@ paths:
         name: id
         schema:
           type: string
-          format: uuid
-        description: A UUID string identifying this campaign run.
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
         required: true
       tags:
       - v1
       security:
-      - {}
+      - cookieAuth: []
       responses:
         '200':
           content:
@@ -257,8 +391,239 @@ paths:
               schema:
                 $ref: '#/components/schemas/Run'
           description: ''
+  /api/v1/runs/{id}/cancel/:
+    post:
+      operationId: v1_runs_cancel_create
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - v1
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+  /api/v1/runs/{id}/events/:
+    get:
+      operationId: v1_runs_events_retrieve
+      parameters:
+      - in: query
+        name: after
+        schema:
+          type: integer
+        description: ID последнего полученного события; от 0.
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Размер страницы от 1 до 200.
+      tags:
+      - v1
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunEventPage'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+  /api/v1/runs/{id}/export/:
+    get:
+      operationId: v1_runs_export_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - v1
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+  /api/v1/runs/{id}/results/:
+    get:
+      operationId: v1_runs_results_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - v1
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunResult'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+  /api/v1/runs/{id}/start/:
+    post:
+      operationId: v1_runs_start_create
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        description: Стабильный ключ запроса запуска, максимум 255 символов.
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - v1
+      security:
+      - cookieAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: ''
 components:
   schemas:
+    CampaignResult:
+      type: object
+      properties:
+        rank:
+          type: integer
+        parameters:
+          type: object
+          additionalProperties: {}
+        explanation:
+          type: string
+        metrics:
+          type: object
+          additionalProperties: {}
+      required:
+      - explanation
+      - metrics
+      - parameters
+      - rank
+    Csrf:
+      type: object
+      properties:
+        csrf_token:
+          type: string
+      required:
+      - csrf_token
     Dataset:
       type: object
       properties:
@@ -288,6 +653,27 @@ components:
       - id
       - imported_at
       - name
+    Error:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+      required:
+      - error
+    ErrorDetail:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        fields:
+          type: object
+          additionalProperties: {}
+      required:
+      - code
+      - fields
+      - message
     Health:
       type: object
       properties:
@@ -298,22 +684,49 @@ components:
       required:
       - service
       - status
+    Login:
+      type: object
+      properties:
+        username:
+          type: string
+          maxLength: 150
+        password:
+          type: string
+          writeOnly: true
+          maxLength: 512
+      required:
+      - password
+      - username
     Meta:
       type: object
       properties:
         limits:
           type: object
-          additionalProperties: {}
+          additionalProperties:
+            type: integer
         channel_costs:
           type: object
-          additionalProperties: {}
+          additionalProperties:
+            type: integer
         features:
-          type: object
-          additionalProperties: {}
+          $ref: '#/components/schemas/MetaFeatures'
       required:
       - channel_costs
       - features
       - limits
+    MetaFeatures:
+      type: object
+      properties:
+        run_execution:
+          type: boolean
+        openai_strategy:
+          type: boolean
+        csv_export:
+          type: boolean
+      required:
+      - csv_export
+      - openai_strategy
+      - run_execution
     PaginatedRunList:
       type: object
       required:
@@ -337,6 +750,47 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Run'
+    Readiness:
+      type: object
+      properties:
+        status:
+          type: string
+        database:
+          type: boolean
+        broker:
+          type: boolean
+      required:
+      - broker
+      - database
+      - status
+    ResultTotals:
+      type: object
+      properties:
+        pilot_cost:
+          type: string
+        campaign_cost:
+          type: string
+          nullable: true
+        total_cost:
+          type: string
+          nullable: true
+        pilot_contacts:
+          type: integer
+        total_contacts:
+          type: integer
+          nullable: true
+        predicted_effect:
+          nullable: true
+        simulator_result:
+          nullable: true
+      required:
+      - campaign_cost
+      - pilot_contacts
+      - pilot_cost
+      - predicted_effect
+      - simulator_result
+      - total_contacts
+      - total_cost
     Run:
       type: object
       properties:
@@ -353,30 +807,32 @@ components:
           readOnly: true
         status:
           allOf:
-          - $ref: '#/components/schemas/StatusEnum'
+          - $ref: '#/components/schemas/RunStatusEnum'
           readOnly: true
         budget:
           type: string
           format: decimal
           pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          default: '100000.00'
         max_contacts:
           type: integer
-          maximum: 9223372036854775807
-          minimum: 0
-          format: int64
+          maximum: 15000
+          minimum: 1
+          default: 15000
         max_pilots:
           type: integer
-          maximum: 9223372036854775807
-          minimum: 0
-          format: int64
+          maximum: 20
+          minimum: 1
+          default: 20
         seed:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 2147483647
           minimum: 0
-          format: int64
+          default: 42
         strategy:
-          type: string
-          maxLength: 16
+          allOf:
+          - $ref: '#/components/schemas/StrategyEnum'
+          default: baseline
         created_at:
           type: string
           format: date-time
@@ -387,7 +843,67 @@ components:
       - id
       - name
       - status
-    StatusEnum:
+    RunEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+        kind:
+          type: string
+        payload: {}
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - created_at
+      - id
+      - kind
+      - payload
+    RunEventPage:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunEvent'
+        next_after:
+          type: integer
+        has_more:
+          type: boolean
+      required:
+      - has_more
+      - next_after
+      - results
+    RunResult:
+      type: object
+      properties:
+        run_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/RunResultStatusEnum'
+        campaigns:
+          type: array
+          items:
+            $ref: '#/components/schemas/CampaignResult'
+        totals:
+          $ref: '#/components/schemas/ResultTotals'
+        warnings:
+          type: array
+          items:
+            type: string
+      required:
+      - campaigns
+      - run_id
+      - status
+      - totals
+      - warnings
+    RunResultStatusEnum:
+      enum:
+      - completed
+      type: string
+      description: '* `completed` - completed'
+    RunStatusEnum:
       enum:
       - draft
       - queued
@@ -403,3 +919,40 @@ components:
         * `completed` - Завершён
         * `failed` - Ошибка
         * `cancelled` - Отменён
+    Session:
+      type: object
+      properties:
+        authenticated:
+          type: boolean
+        user:
+          allOf:
+          - $ref: '#/components/schemas/User'
+          nullable: true
+        csrf_token:
+          type: string
+      required:
+      - authenticated
+      - user
+    StrategyEnum:
+      enum:
+      - baseline
+      type: string
+      description: '* `baseline` - baseline'
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        is_staff:
+          type: boolean
+      required:
+      - id
+      - is_staff
+      - username
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid

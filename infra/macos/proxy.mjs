@@ -107,11 +107,7 @@ const server = createServer((req, res) => {
     return
   }
   if (pathname === '/api' || pathname.startsWith('/api/') || pathname === '/admin' || pathname.startsWith('/admin/')) {
-    if (pathname.startsWith('/api/') && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-      res.writeHead(403, { ...securityHeaders(), 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ detail: 'Public deployment is read-only until API authentication is implemented.' }))
-      return
-    }
+    // Django sessions and CSRF now authenticate both reads and writes.
     proxy(req, res)
     return
   }

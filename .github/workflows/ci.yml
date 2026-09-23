@@ -6,6 +6,28 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: redorda_ci
+          POSTGRES_USER: redorda
+          # Disposable CI service; no password is stored in source control.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U redorda -d redorda_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://redorda@localhost:5432/redorda_ci
+      REDIS_URL: redis://localhost:6379/0
+      REDORDA_LIVE_TESTS: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,7 +56,7 @@ jobs:
       - run: npm run build
         working-directory: frontend
   deploy:
-    needs: [backend, frontend]
+    needs: [backend, frontend, compose]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -72,3 +94,24 @@ jobs:
                   raise SystemExit(f'Deploy rejected: {response.status} {result}')
               print('Mac mini accepted deployment; see logs/deploy.log for completion.')
           PY
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create isolated local configuration
+        run: |
+          cp .env.example .env
+          python3 - <<'PY'
+          import secrets
+          from pathlib import Path
+          path = Path('.env')
+          path.write_text(path.read_text().replace('POSTGRES_PASSWORD=',
+                                                  'POSTGRES_PASSWORD=' + secrets.token_hex(24)))
+          PY
+      - run: docker compose config --quiet
+      - run: docker compose up --build --wait --wait-timeout 180
+      - run: curl --fail http://127.0.0.1:5173/api/v1/ready/
+      - run: docker compose logs --no-color --tail 100
+        if: failure()
+      - run: docker compose down --volumes
+        if: always()

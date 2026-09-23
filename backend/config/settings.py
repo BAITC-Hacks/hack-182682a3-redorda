@@ -8,12 +8,26 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 BASE_DIR = ROOT_DIR / "backend"
 load_dotenv(ROOT_DIR / ".env")
 DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
+REDORDA_REQUIRE_AUTH = not DEBUG or os.getenv("REDORDA_REQUIRE_AUTH", "0") == "1"
+REDORDA_RUN_EXECUTION_ENABLED = os.getenv("REDORDA_RUN_EXECUTION_ENABLED", "0") == "1"
+REDORDA_ENVIRONMENT_FACTORY = os.getenv("REDORDA_ENVIRONMENT_FACTORY", "")
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "local-development-only-change-before-deployment")
 if not DEBUG and SECRET_KEY == "local-development-only-change-before-deployment":
     raise RuntimeError("Set DJANGO_SECRET_KEY before running with DJANGO_DEBUG=0")
 ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,backend").split(",")
 CSRF_TRUSTED_ORIGINS = [
-    origin for origin in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if origin
+    origin.strip() for origin in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+CSRF_FAILURE_VIEW = "apps.campaigns.auth_views.csrf_failure"
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_AGE = 12 * 60 * 60
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 if not DEBUG:
     # Production listeners are loopback-only, behind our trusted HTTPS proxy.
@@ -64,11 +78,15 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 20,
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "EXCEPTION_HANDLER": "apps.campaigns.errors.api_exception_handler",
-    # Local scaffold. Stage 3 adds access control before any public deployment.
-    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
-    "DEFAULT_AUTHENTICATION_CLASSES": [],
+    "DEFAULT_PERMISSION_CLASSES": ["config.permissions.WorkspaceAccess"],
+    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
+    "DEFAULT_THROTTLE_RATES": {"login": "10/min"},
 }
-SPECTACULAR_SETTINGS = {"TITLE": "RedOrda Campaign API", "VERSION": "1.0.0"}
+SPECTACULAR_SETTINGS = {
+    "TITLE": "RedOrda Campaign API", "VERSION": "1.0.0",
+    "SERVE_PERMISSIONS": ["config.permissions.WorkspaceAccess"],
+    "SERVE_AUTHENTICATION": ["rest_framework.authentication.SessionAuthentication"],
+}
 CELERY_BROKER_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_TASK_TIME_LIMIT = 600
@@ -77,3 +95,21 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
+CELERY_TASK_DEFAULT_QUEUE = os.getenv("REDORDA_QUEUE", "redorda")
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BROKER_CONNECTION_TIMEOUT = 3
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "socket_connect_timeout": 3, "socket_timeout": 3,
+    "global_keyprefix": os.getenv("REDORDA_REDIS_PREFIX", "redorda:"),
+}
+CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = {
+    "global_keyprefix": os.getenv("REDORDA_REDIS_PREFIX", "redorda:"),
+}
+CELERY_RESULT_EXPIRES = 3600
+if os.getenv("CACHE_URL"):
+    CACHES = {"default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": os.environ["CACHE_URL"],
+        "KEY_PREFIX": "redorda-cache",
+    }}
