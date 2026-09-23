@@ -127,3 +127,28 @@ test('idempotency key survives reload and remains stable without browser storage
   Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, get() { throw new Error('Unavailable'); } });
   assert.equal(firstPage.startKeyForRun('run-c'), firstPage.startKeyForRun('run-c'));
 });
+
+test('team commands use the saved snapshot, CSRF, and idempotency key', async t => {
+  const { api } = await loadSource('../src/api/client.ts');
+  const calls = mockFetch(t, [json({ schema_version: 1, snapshot_id: 'snapshot-a', tasks: [], artifacts: [], available_commands: ['compare'] }),
+    json({ csrf_token: 'csrf' }), json({ id: 'command-a', type: 'compare', status: 'queued', result: null, error: null }),
+    json({ id: 'command-a', type: 'compare', status: 'completed', result: { artifact_id: 'artifact-a' }, error: null })]);
+  const snapshot = await api.team('run-a');
+  await api.command('run-a', 'compare', snapshot.snapshot_id, { constraints: { budget: '50000' } }, 'stable-command-key');
+  await api.commandResult('run-a', 'command-a');
+  assert.deepEqual(calls.map(call => call.url), ['/api/v1/runs/run-a/team/', '/api/v1/auth/csrf/',
+    '/api/v1/runs/run-a/commands/', '/api/v1/runs/run-a/commands/command-a/']);
+  assert.equal(calls[2].headers.get('Idempotency-Key'), 'stable-command-key');
+  assert.equal(calls[2].headers.get('X-CSRFToken'), 'csrf');
+  assert.deepEqual(JSON.parse(calls[2].body), { type: 'compare', snapshot_id: 'snapshot-a',
+    parameters: { constraints: { budget: '50000' } } });
+  assert.ok(calls.every(call => call.credentials === 'same-origin'));
+});
+
+test('text requests prepare only known typed commands', async () => {
+  const { parseTeamRequest } = await loadSource('../src/api/team-requests.ts');
+  assert.deepEqual(parseTeamRequest('объясни campaign-7'), { type: 'explain', campaignId: 'campaign-7' });
+  assert.deepEqual(parseTeamRequest('сравни бюджет 50000,50'), { type: 'compare', budget: '50000.50' });
+  assert.deepEqual(parseTeamRequest('создай план Новый бюджет'), { type: 'create_plan', planName: 'Новый бюджет' });
+  assert.equal(parseTeamRequest('запусти пилот'), null);
+});

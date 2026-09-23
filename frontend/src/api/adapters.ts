@@ -39,7 +39,7 @@ export function toEvent(value: ApiRunEvent): RunEvent {
     customers: count(observation.n_customers), cost: scalar(observation.cost),
     observed_lift_ratio: count(observation.observed_lift_ratio),
   } : null;
-  return { id: value.id, created_at: value.created_at,
+  return { id: value.id, created_at: value.created_at, event_kind: value.kind, payload: value.payload,
     kind: ['run_failed', 'failed'].includes(value.kind) ? 'error' : value.kind === 'warning' ? 'warning' : pilot ? 'pilot' : 'info',
     message: messages[value.kind] ?? `Событие: ${value.kind}`, pilot };
 }

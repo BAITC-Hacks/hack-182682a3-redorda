@@ -57,6 +57,24 @@ export interface ApiRunEvent {
   created_at: string;
 }
 
+export type ActorId = 'lead' | 'analyst' | 'experiment' | 'finance' | 'control';
+export type CommandType = 'explain' | 'compare' | 'create_plan';
+export interface TeamTask {
+  id: string; actor_id: ActorId; status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  title: string; artifact_ids: string[]; evidence_ids: string[];
+}
+export interface TeamArtifact {
+  id: string; task_id: string; type: string; title: string; data: JsonValue; evidence_ids: string[];
+}
+export interface TeamSnapshot {
+  schema_version: 1; run_id: string; snapshot_id: string; last_event_id: number;
+  tasks: TeamTask[]; artifacts: TeamArtifact[]; available_commands: CommandType[];
+}
+export interface TeamCommand {
+  id: string; type: CommandType; status: 'queued' | 'running' | 'completed' | 'failed';
+  result: JsonValue; error: { code: string; message: string; fields?: Record<string, unknown> } | null;
+}
+
 export interface RunEventsPage {
   results: ApiRunEvent[];
   next_after: number;
@@ -107,6 +125,8 @@ export type Channel = 'push' | 'sms' | 'digital_ads' | 'call';
 export interface RunEvent {
   id: number;
   created_at: string;
+  event_kind: string;
+  payload: Record<string, unknown>;
   kind: 'info' | 'pilot' | 'warning' | 'error';
   message: string;
   pilot?: {

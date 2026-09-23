@@ -41,7 +41,7 @@ beforeEach(() => {
   }));
 });
 
-function open(path = '/runs/plan-1') { render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>); }
+function open(path = '/runs/plan-1') { return render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>); }
 const tick = async () => { await act(async () => { await vi.advanceTimersByTimeAsync(2000); }); };
 
 describe('пользовательский сценарий', () => {
@@ -157,8 +157,8 @@ describe('пользовательский сценарий', () => {
     expect(screen.getAllByText('Пилот завершён')).toHaveLength(1);
   });
 
-  it('прерывает запрос и прекращает опрос при уходе со страницы', async () => {
-    vi.useFakeTimers(); status = 'running'; open(); await act(async () => {});
+  it('сохраняет общий опрос при переходе и прерывает запрос при закрытии приложения', async () => {
+    vi.useFakeTimers(); status = 'running'; const view = open(); await act(async () => {});
     let signal: AbortSignal | null | undefined;
     override = (path, init) => {
       if (path === 'runs/plan-1/') { signal = init?.signal; return new Promise(() => {}); }
@@ -167,6 +167,8 @@ describe('пользовательский сценарий', () => {
     await tick();
     fireEvent.click(screen.getByRole('link', { name: '← Все планы' }));
     await act(async () => {});
+    expect(signal?.aborted).toBe(false);
+    view.unmount();
     expect(signal?.aborted).toBe(true);
     const count = calls.length; await tick(); expect(calls).toHaveLength(count);
   });
